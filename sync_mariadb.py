@@ -4,7 +4,7 @@ from datetime import datetime
 import pymysql
 
 from app import app
-from models import Item, db
+from models import Item, Meta, db
 
 ALMOX_PREFIXES = ("1 [", "201 [", "996 [")
 
@@ -55,6 +55,13 @@ def sync():
             if item.cod_rec and item.cod_rec in saldos:
                 item.sr = int(round(saldos[item.cod_rec]))
                 updated_sr += 1
+
+        meta = db.session.get(Meta, "mariadb_sync_ts")
+        if not meta:
+            meta = Meta(key="mariadb_sync_ts")
+            db.session.add(meta)
+        meta.value = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+
         db.session.commit()
 
     print(

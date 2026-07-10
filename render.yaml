@@ -10,6 +10,8 @@ services:
         sync: false
       - key: SECRET_KEY
         generateValue: true
+      - key: RUN_SCHEDULER
+        value: "1"
       - key: MARIADB_HOST
         sync: false
       - key: MARIADB_PORT

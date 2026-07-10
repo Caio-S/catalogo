@@ -78,6 +78,7 @@ def list_items():
         {
             "items": [i.to_dict() for i in items],
             "ts": get_meta("updated_at"),
+            "mariadbTs": get_meta("mariadb_sync_ts"),
         }
     )
 
@@ -177,6 +178,9 @@ if __name__ == "__main__":
     if not DEBUG or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
         start_scheduler()
     app.run(debug=DEBUG, port=5001)
-else:
-    # producao (gunicorn importa este modulo como app WSGI, nao passa por __main__)
+elif os.environ.get("RUN_SCHEDULER") == "1":
+    # producao (gunicorn importa este modulo como app WSGI). RUN_SCHEDULER e setado
+    # explicitamente no render.yaml do servico web — evita que scripts auxiliares
+    # (sync_mariadb.py, seed.py) que soh precisam de `app`/`db` disparem o scheduler
+    # de novo ao dar `from app import app`.
     start_scheduler()

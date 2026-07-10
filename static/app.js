@@ -38,6 +38,7 @@ async function loadAll() {
   const data = await api('/items');
   DATA = data.items;
   META.ts = data.ts;
+  META.mariadbTs = data.mariadbTs;
 }
 
 /* =============== KPIs =============== */
@@ -323,7 +324,10 @@ document.addEventListener('mouseleave', e => {
   try {
     await loadAll();
     refreshKpis(); render();
-    if (META.ts) {
+    if (META.mariadbTs) {
+      $('#updDate').textContent = META.mariadbTs;
+      showBanner('info', 'Catálogo carregado.', 'Última consulta ao banco: ' + META.mariadbTs);
+    } else if (META.ts) {
       $('#updDate').textContent = META.ts;
       showBanner('info', 'Catálogo carregado.', 'Última atualização: ' + META.ts);
     }

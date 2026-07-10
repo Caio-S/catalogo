@@ -132,6 +132,7 @@ main{max-width:1240px;margin:22px auto 60px;padding:0 28px}
   padding:9px 11px;font-family:var(--body);font-size:14px;outline:none}
 .fld input:focus,.fld select:focus{border-color:var(--green)}
 .fld input.err{border-color:var(--red)}
+.fld input:disabled{color:var(--mut);border-style:dashed;cursor:not-allowed;opacity:.7}
 .nums{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;padding:8px 20px 0}
 .nums .fld input{text-align:center;font-family:var(--disp);font-weight:700;font-size:18px}
 .photobox{margin:14px 20px 0;border:1.5px dashed var(--line);border-radius:8px;padding:14px;display:flex;align-items:center;gap:14px;cursor:pointer;transition:.15s}

@@ -54,7 +54,7 @@ def fetch_saldo_por_codigos(codigos):
         user=os.environ["MARIADB_USER"],
         password=os.environ["MARIADB_PASS"],
         database=os.environ["MARIADB_DB"],
-        connect_timeout=8,
+        connect_timeout=15,
         charset="utf8mb4",
         cursorclass=pymysql.cursors.DictCursor,
     )

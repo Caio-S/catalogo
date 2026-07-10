@@ -11,6 +11,10 @@ const imgSrc = d => d.foto ? `data:${d.foto.mime};base64,${d.foto.b64}` : null;
 const catList = () => [...new Set(DATA.map(d => d.cat))];
 const byId = id => DATA.find(d => d.id === id);
 
+document.addEventListener('animationend', e => {
+  if (e.animationName === 'cardDrop') e.target.classList.remove('tag-enter');
+});
+
 function showBanner(kind, msg, ts) {
   const b = $('#banner'); b.className = 'banner ' + kind; b.style.display = 'block';
   $('#bmsg').textContent = msg; $('#bts').textContent = ts || '';

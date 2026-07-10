@@ -146,6 +146,7 @@ def status():
 
 def job_sync_mariadb():
     if not os.environ.get("MARIADB_HOST"):
+        print("[sync_mariadb] MARIADB_HOST nao configurado, pulando sincronizacao.")
         return
     try:
         sync_mariadb.sync()
@@ -164,8 +165,9 @@ def job_keepalive():
 
 
 def start_scheduler():
+    job_sync_mariadb()  # roda uma vez de cara, sincrono, ao subir o servico
     scheduler = BackgroundScheduler(timezone="America/Sao_Paulo")
-    scheduler.add_job(job_sync_mariadb, IntervalTrigger(hours=5), next_run_time=datetime.now())
+    scheduler.add_job(job_sync_mariadb, IntervalTrigger(hours=5))
     if os.environ.get("RENDER_EXTERNAL_URL"):
         scheduler.add_job(job_keepalive, CronTrigger(minute="*/14"))
     scheduler.start()

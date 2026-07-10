@@ -16,12 +16,16 @@ python app.py        # http://localhost:5001
 
 ## Deploy (Render + Supabase)
 
-1. Crie um projeto no [Supabase](https://supabase.com), copie a **connection string** do Postgres (Settings → Database → Connection string → URI).
-2. Crie um Web Service no [Render](https://render.com) apontando para este repositório (ele detecta o `render.yaml`).
-3. Configure a env var `DATABASE_URL` no Render com a connection string do Supabase.
-4. Depois do primeiro deploy, rode o seed uma vez contra o banco de produção (via Shell do Render ou localmente apontando `DATABASE_URL` para o Supabase):
+1. Crie um projeto no [Supabase](https://supabase.com).
+2. Copie a connection string do **Connection Pooling** (Settings → Database → Connection pooling, modo "Session", porta 5432) — não a conexão direta (`db.xxx.supabase.co`), que é IPv6-only e falha em redes/computadores sem IPv6. O formato é:
    ```
-   set DATABASE_URL=postgresql://...   (Windows)
+   postgresql://postgres.<project-ref>:[SENHA]@aws-0-<região>.pooler.supabase.com:5432/postgres
+   ```
+   Se a senha tiver caracteres especiais (`@`, `#`, etc.), faça o URL-encode (ex: `@` → `%40`).
+3. Crie um Web Service no [Render](https://render.com) apontando para este repositório (ele detecta o `render.yaml`).
+4. Configure a env var `DATABASE_URL` no Render com essa connection string.
+5. Depois do primeiro deploy, rode o seed uma vez contra o banco de produção (localmente, apontando `DATABASE_URL` para o Supabase, via arquivo `.env`):
+   ```
    python seed.py
    ```
 

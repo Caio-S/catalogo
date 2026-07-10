@@ -10,3 +10,24 @@ services:
         sync: false
       - key: SECRET_KEY
         generateValue: true
+
+  - type: cron
+    name: catalogo-ch570-sync-mariadb
+    env: python
+    plan: free
+    schedule: "0 */5 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python sync_mariadb.py
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: MARIADB_HOST
+        sync: false
+      - key: MARIADB_PORT
+        value: "3306"
+      - key: MARIADB_USER
+        sync: false
+      - key: MARIADB_PASS
+        sync: false
+      - key: MARIADB_DB
+        sync: false

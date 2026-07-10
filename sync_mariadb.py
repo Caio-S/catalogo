@@ -41,6 +41,46 @@ def fetch_saldos():
         conn.close()
 
 
+def fetch_saldo_por_codigos(codigos):
+    """Consulta o saldo (mesmo filtro empresa/almoxarifado) só para os codigos informados.
+    Usado pra lookup imediato ao salvar uma peca, sem esperar a sincronizacao periodica."""
+    codigos = [str(c) for c in codigos if c]
+    if not codigos:
+        return {}
+
+    conn = pymysql.connect(
+        host=os.environ["MARIADB_HOST"],
+        port=int(os.environ.get("MARIADB_PORT", 3306)),
+        user=os.environ["MARIADB_USER"],
+        password=os.environ["MARIADB_PASS"],
+        database=os.environ["MARIADB_DB"],
+        connect_timeout=8,
+        charset="utf8mb4",
+        cursorclass=pymysql.cursors.DictCursor,
+    )
+    try:
+        with conn.cursor() as cur:
+            where_almox = " OR ".join(
+                "descricao_almoxarifado2 LIKE %s" for _ in ALMOX_PREFIXES
+            )
+            cod_placeholders = ",".join(["%s"] * len(codigos))
+            params = [p + "%" for p in ALMOX_PREFIXES] + codigos
+            cur.execute(
+                f"""
+                SELECT codigo_produto, SUM(quantidade) AS qtd
+                FROM vw_saldo_estoque_atual
+                WHERE id_empresa IN (7, 8)
+                  AND ({where_almox})
+                  AND codigo_produto IN ({cod_placeholders})
+                GROUP BY codigo_produto
+                """,
+                params,
+            )
+            return {str(row["codigo_produto"]): float(row["qtd"] or 0) for row in cur.fetchall()}
+    finally:
+        conn.close()
+
+
 def sync():
     saldos = fetch_saldos()
 

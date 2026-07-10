@@ -53,6 +53,21 @@ def item_from_payload(payload, item=None):
     return item
 
 
+def apply_saldo_live(item):
+    """Consulta o MariaDB na hora, só pra este item, e atualiza sn/sr se achar o codigo."""
+    if not os.environ.get("MARIADB_HOST"):
+        return
+    try:
+        saldos = sync_mariadb.fetch_saldo_por_codigos([item.cod_novo, item.cod_rec])
+    except Exception as exc:
+        print(f"[sync_mariadb] lookup ao salvar falhou: {exc}")
+        return
+    if item.cod_novo and item.cod_novo in saldos:
+        item.sn = int(round(saldos[item.cod_novo]))
+    if item.cod_rec and item.cod_rec in saldos:
+        item.sr = int(round(saldos[item.cod_rec]))
+
+
 def get_meta(key):
     row = db.session.get(Meta, key)
     return row.value if row else None
@@ -100,6 +115,7 @@ def create_item():
     item.novo = True
     max_n = db.session.query(db.func.max(Item.n)).scalar() or 0
     item.n = max_n + 1
+    apply_saldo_live(item)
     db.session.add(item)
     set_meta("updated_at", datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
     db.session.commit()
@@ -125,6 +141,7 @@ def update_item(item_id):
         return jsonify({"error": f'Já existe uma peça com esses códigos: {dup.desc}.'}), 409
 
     item_from_payload(payload, item)
+    apply_saldo_live(item)
     set_meta("updated_at", datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
     db.session.commit()
     return jsonify(item.to_dict())

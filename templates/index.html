@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestão de Peças — Colhedora CH570 | CRV Industrial</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header>
+  <div class="hwrap">
+    <div>
+      <div class="eyebrow">CRV Industrial · Unidade Capinópolis/MG · Oficina Agrícola</div>
+      <h1>Gestão de Peças <em>CH570</em></h1>
+      <div class="hsub">Colhedora de cana (esteiras) · Motores 6090HNW02 / 6090HNW04 · Edição Sul Americana — PC12797</div>
+    </div>
+    <div class="updated">ÚLTIMA ATUALIZAÇÃO<br><b id="updDate">—</b></div>
+  </div>
+  <div class="kpis" id="kpis"></div>
+</header>
+
+<div class="tools">
+  <div class="twrap">
+    <div class="search">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8CA096" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <input id="q" type="text" placeholder="Buscar descrição, código CHB, referência, base de fogo…" autocomplete="off">
+    </div>
+    <select id="fcat"><option value="">Todas as categorias</option></select>
+    <span class="chip c-dv" data-f="dv">Devendo</span>
+    <span class="chip c-em" data-f="em">Em manutenção</span>
+    <span class="chip c-ok" data-f="ok">Com saldo recond.</span>
+    <button class="btn primary" id="btnAdd">＋ Adicionar peça</button>
+    <label class="btn" for="xlfile" id="lblImport">⟳ Importar Excel</label>
+    <input type="file" id="xlfile" accept=".xlsx,.xlsm" style="display:none">
+    <button class="btn" id="btnExport">⬇ Exportar Excel</button>
+    <span class="count" id="cnt"></span>
+  </div>
+</div>
+
+<div class="banner" id="banner"><div class="inner"><span id="bmsg"></span><span id="bts" style="opacity:.7"></span></div></div>
+
+<main id="main"><div class="loading">Carregando catálogo…</div></main>
+
+<div class="overlay" id="ov"><div class="ficha" id="ficha"></div></div>
+
+<div class="overlay" id="ov2"><div class="ficha form" id="formBox">
+  <div class="fh" style="padding:0"><h2 id="formTitle" style="flex:1">Adicionar peça</h2>
+    <button class="fx" data-close="ov2" style="margin:18px 20px 0 0">✕</button></div>
+  <div class="fgrid">
+    <div class="fld full"><label>Descrição *</label><input id="f_desc" maxlength="80"></div>
+    <div class="fld"><label>Categoria *</label><select id="f_cat"></select></div>
+    <div class="fld"><label>Base nº de fogo</label><input id="f_fogo" maxlength="10" style="text-transform:uppercase"></div>
+    <div class="fld"><label>Cód. CHB novo *</label><input id="f_cn" inputmode="numeric"></div>
+    <div class="fld"><label>Cód. CHB recond.</label><input id="f_cr"></div>
+    <div class="fld full"><label>Referência</label><input id="f_ref" maxlength="30"></div>
+  </div>
+  <div class="nums">
+    <div class="fld"><label>Novo</label><input id="f_sn" type="number" min="0" value="0"></div>
+    <div class="fld"><label>P/ Cons.</label><input id="f_pc" type="number" min="0" value="0"></div>
+    <div class="fld"><label>Recond.</label><input id="f_sr" type="number" min="0" value="0"></div>
+    <div class="fld"><label>Manut.</label><input id="f_em" type="number" min="0" value="0"></div>
+    <div class="fld"><label>Devendo</label><input id="f_dv" type="number" min="0" value="0"></div>
+  </div>
+  <label class="photobox" for="f_img">
+    <div class="pv" id="f_pv"><span style="color:#8CA096;font-size:10px;font-family:var(--disp);letter-spacing:.1em">SEM FOTO</span></div>
+    <div class="pt"><b style="color:var(--txt)">Foto da peça</b><br>Clique para escolher uma imagem (JPG/PNG). Ela será compactada automaticamente.</div>
+  </label>
+  <input type="file" id="f_img" accept="image/*" style="display:none">
+  <div class="ferr" id="ferr"></div>
+  <div class="formbtns">
+    <button class="btn" data-close="ov2">Cancelar</button>
+    <button class="btn primary" id="btnSave">Salvar peça</button>
+  </div>
+</div></div>
+
+<footer>Catálogo CH570 · CRV Industrial</footer>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

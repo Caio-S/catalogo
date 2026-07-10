@@ -60,7 +60,8 @@ def sync():
     print(
         f"[{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}] "
         f"Sincronizacao MariaDB concluida: {updated_sn} peca(s) com saldo novo atualizado, "
-        f"{updated_sr} peca(s) com saldo recondicionado atualizado ({len(saldos)} codigos lidos)."
+        f"{updated_sr} peca(s) com saldo recondicionado atualizado ({len(saldos)} codigos lidos).",
+        flush=True,
     )
 
 

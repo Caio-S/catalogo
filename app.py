@@ -1,6 +1,10 @@
 import os
 from datetime import datetime
 
+import requests
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request
 
@@ -26,6 +30,8 @@ db.init_app(app)
 
 with app.app_context():
     db.create_all()
+
+import sync_mariadb  # noqa: E402 (precisa que `app` já exista, ver import circular em sync_mariadb.py)
 
 
 def item_from_payload(payload, item=None):
@@ -132,5 +138,45 @@ def delete_item(item_id):
     return "", 204
 
 
+@app.route("/api/status")
+def status():
+    return jsonify({"ok": True})
+
+
+def job_sync_mariadb():
+    if not os.environ.get("MARIADB_HOST"):
+        return
+    try:
+        sync_mariadb.sync()
+    except Exception as exc:
+        print(f"[sync_mariadb] falhou: {exc}")
+
+
+def job_keepalive():
+    url = os.environ.get("RENDER_EXTERNAL_URL")
+    if not url:
+        return
+    try:
+        requests.get(url.rstrip("/") + "/api/status", timeout=10)
+    except Exception:
+        pass
+
+
+def start_scheduler():
+    scheduler = BackgroundScheduler(timezone="America/Sao_Paulo")
+    scheduler.add_job(job_sync_mariadb, IntervalTrigger(hours=5), next_run_time=datetime.now())
+    if os.environ.get("RENDER_EXTERNAL_URL"):
+        scheduler.add_job(job_keepalive, CronTrigger(minute="*/14"))
+    scheduler.start()
+
+
 if __name__ == "__main__":
-    app.run(debug=True, port=5001)
+    DEBUG = True
+    # evita duplicar o scheduler quando o reloader do Flask (debug=True) sobe dois processos:
+    # só inicia na execucao real (filha) do reloader, nunca no processo "vigia"
+    if not DEBUG or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        start_scheduler()
+    app.run(debug=DEBUG, port=5001)
+else:
+    # producao (gunicorn importa este modulo como app WSGI, nao passa por __main__)
+    start_scheduler()

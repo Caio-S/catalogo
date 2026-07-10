@@ -132,33 +132,5 @@ def delete_item(item_id):
     return "", 204
 
 
-@app.route("/api/items/bulk", methods=["POST"])
-def bulk_import():
-    payload = request.get_json(force=True)
-    rows = payload.get("items", [])
-    added = 0
-    updated = 0
-    for row in rows:
-        cn = row.get("codNovo")
-        cr = row.get("codRec")
-        if cn in (None, ""):
-            continue
-        existing = Item.query.filter_by(
-            cod_novo=str(cn), cod_rec=(str(cr) if cr not in (None, "") else None)
-        ).first()
-        if existing:
-            item_from_payload(row, existing)
-            updated += 1
-        else:
-            item = item_from_payload(row)
-            item.id = row.get("id") or ("i" + str(int(datetime.utcnow().timestamp() * 1000)) + str(added))
-            item.n = row.get("n")
-            db.session.add(item)
-            added += 1
-    set_meta("updated_at", datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
-    db.session.commit()
-    return jsonify({"added": added, "updated": updated, "ts": get_meta("updated_at")})
-
-
 if __name__ == "__main__":
     app.run(debug=True, port=5001)

@@ -82,12 +82,15 @@ function match(d) {
   }
   return true;
 }
-function card(d) {
+let firstPaint = true;
+function card(d, idx) {
   const st = status(d);
   const src = imgSrc(d);
   const ph = src ? `<div class="ph"><img loading="lazy" src="${src}" alt=""></div>`
     : `<div class="ph nophoto">SEM FOTO</div>`;
-  return `<div class="tag" data-id="${d.id}" role="button" tabindex="0" aria-label="${esc(d.desc)}">
+  const enterClass = firstPaint ? ' tag-enter' : '';
+  const enterStyle = firstPaint ? ` style="animation-delay:${Math.min(idx * 16, 480)}ms"` : '';
+  return `<div class="tag${enterClass}" data-id="${d.id}" role="button" tabindex="0" aria-label="${esc(d.desc)}"${enterStyle}>
     <span class="punch"></span>${d.novo ? '<span class="new">NOVA</span>' : ''}
     <div class="thead">${ph}
       <div class="tinfo">${d.fogo ? `<span class="fogo">${esc(d.fogo)}</span>` : ''}
@@ -108,21 +111,21 @@ function render() {
   if (!DATA.length) {
     $('#cnt').textContent = '';
     $('#main').innerHTML = `<div class="empty"><b>Catálogo vazio.</b><br><br>
-      Para montar o catálogo, clique em <b>⟳ Importar Excel</b> e selecione o relatório gerencial
-      "Saldos Peças-Consertados" — o app lê os itens, os saldos <b>e as fotos embutidas</b> na planilha automaticamente.<br><br>
-      Ou clique em <b>＋ Adicionar peça</b> para cadastrar manualmente.</div>`;
+      Clique em <b>＋ Adicionar peça</b> para cadastrar a primeira peça.</div>`;
     return;
   }
   const vis = DATA.filter(match);
   $('#cnt').innerHTML = `<b>${vis.length}</b> / ${DATA.length} itens`;
   if (!vis.length) { $('#main').innerHTML = `<div class="empty">Nenhuma peça corresponde aos filtros.</div>`; return; }
   let html = '';
+  let idx = 0;
   for (const c of catList()) {
     const grp = vis.filter(d => d.cat === c);
     if (!grp.length) continue;
-    html += `<div class="catlab">${esc(c)} · ${grp.length}</div><div class="grid">${grp.map(card).join('')}</div>`;
+    html += `<div class="catlab">${esc(c)} · ${grp.length}</div><div class="grid">${grp.map(d => card(d, idx++)).join('')}</div>`;
   }
   $('#main').innerHTML = html;
+  firstPaint = false;
 }
 
 /* =============== ficha =============== */
@@ -269,104 +272,6 @@ $('#btnSave').onclick = async () => {
   finally { $('#btnSave').disabled = false; }
 };
 
-/* =============== importar Excel (dados + fotos embutidas) =============== */
-const HDR_MAP = { 'SALDO NOVO': 'sn', 'P/ CONSERTO': 'pc', 'SALDO REC': 'sr', 'EM MANUT': 'em', 'DEVENDO': 'dv' };
-const norm = s => String(s ?? '').replace(/\s+/g, ' ').trim().toUpperCase();
-
-async function extractPhotos(buf) {
-  const zip = await JSZip.loadAsync(buf);
-  const out = {};
-  const drawingFiles = Object.keys(zip.files).filter(f => /^xl\/drawings\/drawing\d+\.xml$/.test(f));
-  for (const df of drawingFiles) {
-    const xml = await zip.file(df).async('string');
-    const relsPath = df.replace('drawings/', 'drawings/_rels/') + '.rels';
-    const relsFile = zip.file(relsPath); if (!relsFile) continue;
-    const rels = await relsFile.async('string');
-    const rid2img = {};
-    for (const m of rels.matchAll(/Id="(rId\d+)"[^>]*Target="\.\.\/media\/([^"]+)"/g)) rid2img[m[1]] = m[2];
-    for (const m of xml.matchAll(/<xdr:(?:twoCell|oneCell)Anchor[\s\S]*?<\/xdr:(?:twoCell|oneCell)Anchor>/g)) {
-      const a = m[0];
-      const fr = a.match(/<xdr:from>[\s\S]*?<xdr:row>(\d+)<\/xdr:row>/);
-      const rid = a.match(/r:embed="(rId\d+)"/);
-      if (!fr || !rid || !rid2img[rid[1]]) continue;
-      const excelRow = +fr[1] + 1;
-      if (out[excelRow]) continue;
-      const mediaFile = zip.file('xl/media/' + rid2img[rid[1]]);
-      if (!mediaFile) continue;
-      const blob = await mediaFile.async('blob');
-      const b64 = await new Promise((res, rej) => {
-        const img = new Image();
-        img.onload = () => { try { res(compressToJpeg(img, 300)); } catch (e) { rej(e); } finally { URL.revokeObjectURL(img.src); } };
-        img.onerror = () => { URL.revokeObjectURL(img.src); res(null); };
-        img.src = URL.createObjectURL(blob);
-      });
-      if (b64) out[excelRow] = { b64, mime: 'image/jpeg' };
-    }
-  }
-  return out;
-}
-
-$('#xlfile').addEventListener('change', async e => {
-  const file = e.target.files[0]; if (!file) return;
-  $('#lblImport').textContent = '⏳ Importando…';
-  try {
-    const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, { type: 'array' });
-    const shName = wb.SheetNames.find(n => n.toUpperCase().includes('CH570')) || wb.SheetNames[0];
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[shName], { header: 1, defval: null });
-
-    let hri = -1, cols = {};
-    for (let i = 0; i < Math.min(rows.length, 15); i++) {
-      const r = (rows[i] || []).map(norm);
-      if (r.includes('ITEM') && r.some(c => c.includes('DEVENDO'))) {
-        hri = i;
-        r.forEach((h, ci) => { for (const k in HDR_MAP) if (h.includes(k)) cols[HDR_MAP[k]] = ci;
-          if (h.includes('CHB') && h.includes('NOVO')) cols.codNovo = ci;
-          if (h.includes('CHB') && h.includes('RECOND')) cols.codRec = ci;
-          if (h.includes('FOGO')) cols.fogo = ci;
-          if (h.includes('DESCRI')) cols.desc = ci;
-          if (h.includes('REFER')) cols.ref = ci; });
-        break;
-      }
-    }
-    if (hri < 0 || cols.codNovo == null) throw new Error('Cabeçalho não encontrado (ITEM / CÓD CHB / DEVENDO). Verifique se é o relatório gerencial CH570.');
-
-    const fotos = await extractPhotos(buf);
-    let cat = 'Geral';
-    const items = [];
-    for (let i = hri + 1; i < rows.length; i++) {
-      const r = rows[i] || [];
-      const a = r[0];
-      if (typeof a === 'string' && a.trim() && r[cols.codNovo] == null) {
-        const t = a.trim(); if (!/^TOTAL/i.test(t)) cat = t.replace(/\b\w/g, c => c.toUpperCase());
-        continue;
-      }
-      if (r[cols.codNovo] == null || typeof a !== 'number') continue;
-      const cn = r[cols.codNovo], cr = r[cols.codRec];
-      const num = c => { const v = r[cols[c]]; return (typeof v === 'number') ? v : 0; };
-      const excelRow = i + 1;
-      const item = {
-        n: a, cat,
-        codNovo: cn, codRec: cr ?? null,
-        fogo: String(r[cols.fogo] ?? '').trim(), desc: String(r[cols.desc] ?? '').trim(),
-        ref: String(r[cols.ref] ?? '').trim(),
-        sn: num('sn'), pc: num('pc'), sr: num('sr'), em: num('em'), dv: num('dv'),
-      };
-      if (fotos[excelRow]) item.foto = fotos[excelRow];
-      items.push(item);
-    }
-    if (!items.length) throw new Error('Nenhum item reconhecido na planilha.');
-
-    const result = await api('/items/bulk', { method: 'POST', body: JSON.stringify({ items }) });
-    await loadAll();
-    refreshKpis(); render();
-    $('#updDate').textContent = META.ts;
-    showBanner('ok', `Importação concluída: ${result.added} item(ns) novo(s), ${result.updated} atualizado(s).`, 'Arquivo: ' + file.name + ' · ' + META.ts);
-  } catch (err) { showBanner('err', 'Falha ao importar: ' + err.message, ''); }
-  $('#lblImport').textContent = '⟳ Importar Excel';
-  e.target.value = '';
-});
-
 /* =============== exportar Excel =============== */
 $('#btnExport').onclick = () => {
   const header = ['ITEM', 'CÓD CHB NOVO', 'CÓD CHB RECOND', 'BASE Nº DE FOGO', 'DESCRIÇÃO GENÉRICA',
@@ -387,6 +292,26 @@ $('#btnExport').onclick = () => {
   XLSX.writeFile(wb, 'Saldos_Pecas_CH570_' + new Date().toISOString().slice(0, 10) + '.xlsx');
   showBanner('ok', 'Planilha exportada com o estado atual do catálogo.', '');
 };
+
+/* =============== tilt 3D no hover =============== */
+let tiltCard = null;
+document.addEventListener('mousemove', e => {
+  const card = e.target.closest('.tag');
+  if (card !== tiltCard) {
+    if (tiltCard) tiltCard.style.transform = '';
+    tiltCard = card;
+  }
+  if (!card) return;
+  const r = card.getBoundingClientRect();
+  const px = (e.clientX - r.left) / r.width;
+  const py = (e.clientY - r.top) / r.height;
+  const rotY = (px - 0.5) * 10;
+  const rotX = (0.5 - py) * 10;
+  card.style.transform = `perspective(800px) rotateX(${rotX}deg) rotateY(${rotY}deg) translateY(-4px) scale(1.02)`;
+});
+document.addEventListener('mouseleave', e => {
+  if (tiltCard) { tiltCard.style.transform = ''; tiltCard = null; }
+}, true);
 
 /* =============== boot =============== */
 (async () => {

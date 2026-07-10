@@ -62,8 +62,18 @@ main{max-width:1240px;margin:22px auto 60px;padding:0 28px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(285px,1fr));gap:12px}
 
 .tag{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;cursor:pointer;
-  transition:transform .15s,border-color .15s,box-shadow .15s;position:relative}
-.tag:hover{transform:translateY(-3px);border-color:var(--green-d);box-shadow:0 10px 26px rgba(0,0,0,.45)}
+  transition:transform .15s cubic-bezier(.22,1,.36,1),border-color .15s,box-shadow .25s;position:relative;
+  will-change:transform;transform-style:preserve-3d}
+.tag:hover{border-color:var(--green-d);box-shadow:0 14px 30px rgba(0,0,0,.5)}
+
+@keyframes cardDrop{
+  0%{opacity:0;transform:translateY(-70px) scale(.82) rotate(-4deg)}
+  55%{opacity:1;transform:translateY(10px) scale(1.02) rotate(1.5deg)}
+  80%{transform:translateY(-3px) scale(.99) rotate(-.5deg)}
+  100%{opacity:1;transform:translateY(0) scale(1) rotate(0)}
+}
+.tag-enter{animation:cardDrop .6s cubic-bezier(.25,.85,.4,1.15) both}
+@media (prefers-reduced-motion: reduce){ .tag-enter{animation:none} }
 .tag .punch{position:absolute;top:10px;left:10px;width:11px;height:11px;border-radius:50%;background:var(--bg);border:2px solid var(--line);z-index:2}
 .tag .new{position:absolute;top:8px;right:8px;background:var(--blue);color:#fff;font-size:9px;font-weight:700;letter-spacing:.08em;border-radius:4px;padding:2px 6px}
 .thead{display:flex;gap:12px;padding:14px 14px 10px 14px;align-items:center}

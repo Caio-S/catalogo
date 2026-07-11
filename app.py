@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import date, datetime
 
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -8,7 +8,19 @@ from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request
 
-from models import Item, Meta, db
+from models import (
+    SIT_APLICADO,
+    SIT_DISPONIVEL_NOVO,
+    SIT_DISPONIVEL_RECOND,
+    SIT_NO_FORNECEDOR,
+    SIT_P_CONSERTO,
+    Aggregate,
+    Item,
+    Meta,
+    Mov,
+    Req,
+    db,
+)
 
 load_dotenv()
 
@@ -152,6 +164,354 @@ def delete_item(item_id):
     item = Item.query.get_or_404(item_id)
     db.session.delete(item)
     set_meta("updated_at", datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+    db.session.commit()
+    return "", 204
+
+
+def new_id(prefix):
+    return prefix + str(int(datetime.utcnow().timestamp() * 1000))
+
+
+def parse_date(s):
+    if not s:
+        return None
+    try:
+        return date.fromisoformat(s)
+    except ValueError:
+        return None
+
+
+def bump(item, field, delta):
+    """Soma delta num campo de saldo do item, sem deixar negativo."""
+    setattr(item, field, max(0, (getattr(item, field) or 0) + delta))
+
+
+def open_mov_or_req_for_fogo(fogo):
+    mov = Mov.query.filter_by(fogo_agg=fogo, status="NO_FORNECEDOR").first()
+    if mov:
+        return "está no fornecedor"
+    req = Req.query.filter_by(fogo_agg=fogo, status="APLICADO").first()
+    if req:
+        return "está aplicado numa máquina"
+    return None
+
+
+# =============== agregados (unidades fisicas por numero de fogo) ===============
+
+
+@app.route("/api/aggregates", methods=["GET"])
+def list_aggregates():
+    q = Aggregate.query
+    item_id = request.args.get("itemId")
+    if item_id:
+        q = q.filter_by(item_id=item_id)
+    situacao = request.args.get("situacao")
+    if situacao:
+        q = q.filter_by(situacao=situacao)
+    aggs = q.order_by(Aggregate.criado_em.desc()).all()
+    return jsonify([a.to_dict() for a in aggs])
+
+
+@app.route("/api/aggregates", methods=["POST"])
+def create_aggregate():
+    payload = request.get_json(force=True)
+    fogo = str(payload.get("fogo", "")).strip().upper()
+    item_id = payload.get("itemId")
+    if not fogo or not item_id:
+        return jsonify({"error": "Número de fogo e peça são obrigatórios."}), 400
+    if not db.session.get(Item, item_id):
+        return jsonify({"error": "Peça não encontrada."}), 404
+    if Aggregate.query.filter_by(fogo=fogo).first():
+        return jsonify({"error": f"Já existe um agregado com o fogo {fogo}."}), 409
+
+    agg = Aggregate(
+        id=new_id("g"),
+        fogo=fogo,
+        item_id=item_id,
+        situacao=payload.get("situacao") or SIT_DISPONIVEL_NOVO,
+        serie=(payload.get("serie") or "").strip(),
+        maquina=(payload.get("maquina") or "").strip(),
+        obs=(payload.get("obs") or "").strip(),
+    )
+    db.session.add(agg)
+    db.session.commit()
+    return jsonify(agg.to_dict()), 201
+
+
+@app.route("/api/aggregates/<agg_id>", methods=["PUT"])
+def update_aggregate(agg_id):
+    agg = Aggregate.query.get_or_404(agg_id)
+    payload = request.get_json(force=True)
+
+    nova_situacao = payload.get("situacao")
+    if nova_situacao and nova_situacao != agg.situacao:
+        bloqueio = open_mov_or_req_for_fogo(agg.fogo)
+        if bloqueio:
+            return jsonify({"error": f"Não é possível mudar a situação: o agregado {bloqueio}."}), 409
+        agg.situacao = nova_situacao
+
+    if "serie" in payload:
+        agg.serie = (payload.get("serie") or "").strip()
+    if "maquina" in payload:
+        agg.maquina = (payload.get("maquina") or "").strip()
+    if "obs" in payload:
+        agg.obs = (payload.get("obs") or "").strip()
+
+    db.session.commit()
+    return jsonify(agg.to_dict())
+
+
+@app.route("/api/aggregates/<agg_id>", methods=["DELETE"])
+def delete_aggregate(agg_id):
+    agg = Aggregate.query.get_or_404(agg_id)
+    bloqueio = open_mov_or_req_for_fogo(agg.fogo)
+    if bloqueio:
+        return jsonify({"error": f"Não é possível excluir: o agregado {bloqueio}."}), 409
+    db.session.delete(agg)
+    db.session.commit()
+    return "", 204
+
+
+# =============== movimentacoes (envio/retorno ao fornecedor) ===============
+
+
+@app.route("/api/movs", methods=["GET"])
+def list_movs():
+    q = Mov.query
+    item_id = request.args.get("itemId")
+    if item_id:
+        q = q.filter_by(item_id=item_id)
+    status_f = request.args.get("status")
+    if status_f:
+        q = q.filter_by(status=status_f)
+    movs = q.order_by(Mov.criado_em.desc()).all()
+    return jsonify([m.to_dict() for m in movs])
+
+
+@app.route("/api/movs", methods=["POST"])
+def create_mov():
+    payload = request.get_json(force=True)
+    item_id = payload.get("itemId")
+    fornecedor = str(payload.get("fornecedor", "")).strip()
+    qtd = int(payload.get("qtd") or 0)
+    if not item_id or not fornecedor or qtd <= 0:
+        return jsonify({"error": "Peça, fornecedor e quantidade são obrigatórios."}), 400
+    item = db.session.get(Item, item_id)
+    if not item:
+        return jsonify({"error": "Peça não encontrada."}), 404
+
+    fogo_agg = (payload.get("fogoAgg") or "").strip().upper() or None
+    origem = payload.get("origem") if payload.get("origem") in ("pc", "nenhum") else "nenhum"
+
+    mov = Mov(
+        id=new_id("m"),
+        item_id=item_id,
+        fogo_agg=fogo_agg,
+        fornecedor=fornecedor,
+        qtd=qtd,
+        origem=origem,
+        data_envio=parse_date(payload.get("dataEnvio")) or date.today(),
+        previsao_retorno=parse_date(payload.get("previsaoRetorno")),
+        nf_remessa=(payload.get("nfRemessa") or "").strip(),
+        orcamento=(payload.get("orcamento") or "").strip(),
+        pedido_compra=(payload.get("pedidoCompra") or "").strip(),
+        servicos=(payload.get("servicos") or "").strip(),
+        obs=(payload.get("obs") or "").strip(),
+        status="NO_FORNECEDOR",
+        registrado_por=(payload.get("registradoPor") or "").strip(),
+    )
+    db.session.add(mov)
+
+    if fogo_agg:
+        agg = Aggregate.query.filter_by(fogo=fogo_agg).first()
+        if agg:
+            agg.situacao = SIT_NO_FORNECEDOR
+
+    if origem == "pc":
+        bump(item, "pc", -qtd)
+    bump(item, "em", qtd)
+
+    db.session.commit()
+    return jsonify(mov.to_dict()), 201
+
+
+@app.route("/api/movs/<mov_id>/retorno", methods=["POST"])
+def retornar_mov(mov_id):
+    mov = Mov.query.get_or_404(mov_id)
+    if mov.status == "RETORNADO":
+        return jsonify({"error": "Este envio já foi retornado."}), 409
+    payload = request.get_json(force=True)
+
+    mov.status = "RETORNADO"
+    mov.data_retorno = date.today()
+    mov.nf_devolucao = (payload.get("nfDevolucao") or "").strip()
+    mov.retornado_por = (payload.get("retornadoPor") or "").strip()
+
+    item = db.session.get(Item, mov.item_id)
+    if item:
+        bump(item, "em", -mov.qtd)
+
+    if mov.fogo_agg:
+        agg = Aggregate.query.filter_by(fogo=mov.fogo_agg).first()
+        if agg:
+            agg.situacao = SIT_DISPONIVEL_RECOND
+
+    db.session.commit()
+    return jsonify(mov.to_dict())
+
+
+@app.route("/api/movs/<mov_id>/docs", methods=["PUT"])
+def update_mov_docs(mov_id):
+    mov = Mov.query.get_or_404(mov_id)
+    payload = request.get_json(force=True)
+    for campo, chave in (
+        ("nf_remessa", "nfRemessa"),
+        ("orcamento", "orcamento"),
+        ("pedido_compra", "pedidoCompra"),
+        ("nf_devolucao", "nfDevolucao"),
+        ("servicos", "servicos"),
+        ("obs", "obs"),
+    ):
+        if chave in payload:
+            setattr(mov, campo, (payload.get(chave) or "").strip())
+    db.session.commit()
+    return jsonify(mov.to_dict())
+
+
+# =============== requisicoes (aplicacao de agregado na frota) ===============
+
+
+@app.route("/api/requisitions", methods=["GET"])
+def list_requisitions():
+    q = Req.query
+    item_id = request.args.get("itemId")
+    if item_id:
+        q = q.filter_by(item_id=item_id)
+    status_f = request.args.get("status")
+    if status_f:
+        q = q.filter_by(status=status_f)
+    reqs = q.order_by(Req.criado_em.desc()).all()
+    return jsonify([r.to_dict() for r in reqs])
+
+
+@app.route("/api/requisitions", methods=["POST"])
+def create_requisition():
+    payload = request.get_json(force=True)
+    item_id = payload.get("itemId")
+    frota = str(payload.get("frota", "")).strip()
+    if not item_id or not frota:
+        return jsonify({"error": "Peça e frota são obrigatórios."}), 400
+    if not db.session.get(Item, item_id):
+        return jsonify({"error": "Peça não encontrada."}), 404
+
+    fogo_agg = (payload.get("fogoAgg") or "").strip().upper() or None
+
+    req = Req(
+        id=new_id("r"),
+        item_id=item_id,
+        fogo_agg=fogo_agg,
+        frota=frota,
+        solicitante=(payload.get("solicitante") or "").strip(),
+        data_req=parse_date(payload.get("dataReq")) or date.today(),
+        obs=(payload.get("obs") or "").strip(),
+        status="APLICADO",
+        registrado_por=(payload.get("registradoPor") or "").strip(),
+        entrega="PENDENTE",
+        casco_status=payload.get("cascoStatus") or None,
+        casco_func=(payload.get("cascoFunc") or "").strip() or None,
+    )
+    db.session.add(req)
+
+    if fogo_agg:
+        agg = Aggregate.query.filter_by(fogo=fogo_agg).first()
+        if agg:
+            agg.situacao = SIT_APLICADO
+            agg.maquina = frota
+
+    db.session.commit()
+    return jsonify(req.to_dict()), 201
+
+
+@app.route("/api/requisitions/<req_id>/entrega", methods=["POST"])
+def confirmar_entrega(req_id):
+    req = Req.query.get_or_404(req_id)
+    payload = request.get_json(force=True)
+    req.entrega = "ENTREGUE"
+    req.data_entrega = date.today()
+    req.entregue_por = (payload.get("entreguePor") or "").strip()
+    db.session.commit()
+    return jsonify(req.to_dict())
+
+
+@app.route("/api/requisitions/<req_id>/casco", methods=["POST"])
+def receber_casco(req_id):
+    req = Req.query.get_or_404(req_id)
+    payload = request.get_json(force=True)
+    req.casco_status = "DEVOLVIDO"
+    req.data_casco = date.today()
+    req.casco_recebido_por = (payload.get("cascoRecebidoPor") or "").strip()
+    novo_fogo = (payload.get("novoFogo") or "").strip().upper()
+    if novo_fogo:
+        req.casco_fogo = novo_fogo
+
+    item = db.session.get(Item, req.item_id)
+    if item:
+        bump(item, "pc", 1)  # casco devolvido entra na fila de conserto
+
+    if novo_fogo and not Aggregate.query.filter_by(fogo=novo_fogo).first():
+        db.session.add(
+            Aggregate(
+                id=new_id("g"),
+                fogo=novo_fogo,
+                item_id=req.item_id,
+                situacao=SIT_P_CONSERTO,
+                obs="Casco devolvido na requisição " + req.id,
+            )
+        )
+
+    db.session.commit()
+    return jsonify(req.to_dict())
+
+
+@app.route("/api/requisitions/<req_id>/devolucao", methods=["POST"])
+def devolver_requisition(req_id):
+    req = Req.query.get_or_404(req_id)
+    if req.status == "DEVOLVIDO":
+        return jsonify({"error": "Esta requisição já foi devolvida."}), 409
+    payload = request.get_json(force=True)
+    destino = payload.get("destino") if payload.get("destino") in ("pc", "disponivel") else "disponivel"
+
+    req.status = "DEVOLVIDO"
+    req.data_dev = date.today()
+    req.registrado_por = (payload.get("registradoPor") or "").strip() or req.registrado_por
+
+    item = db.session.get(Item, req.item_id)
+    if destino == "pc" and item:
+        bump(item, "pc", 1)
+
+    if req.fogo_agg:
+        agg = Aggregate.query.filter_by(fogo=req.fogo_agg).first()
+        if agg:
+            agg.situacao = SIT_P_CONSERTO if destino == "pc" else SIT_DISPONIVEL_RECOND
+            agg.maquina = None
+
+    db.session.commit()
+    return jsonify(req.to_dict())
+
+
+@app.route("/api/requisitions/<req_id>", methods=["DELETE"])
+def cancelar_requisition(req_id):
+    req = Req.query.get_or_404(req_id)
+    if req.entrega == "ENTREGUE":
+        return jsonify({"error": "Não é possível cancelar: já foi entregue. Use devolução."}), 409
+
+    if req.fogo_agg:
+        agg = Aggregate.query.filter_by(fogo=req.fogo_agg).first()
+        if agg:
+            agg.situacao = SIT_DISPONIVEL_RECOND
+            agg.maquina = None
+
+    db.session.delete(req)
     db.session.commit()
     return "", 204
 

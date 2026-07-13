@@ -663,10 +663,10 @@ def devolver_requisition(req_id):
 @require_role(ROLE_ADMIN)
 def cancelar_requisition(req_id):
     req = Req.query.get_or_404(req_id)
-    if req.entrega == "ENTREGUE":
-        return jsonify({"error": "Não é possível cancelar: já foi entregue. Use devolução."}), 409
+    if req.casco_status == "DEVOLVIDO":
+        return jsonify({"error": "Não é possível excluir: o casco já foi devolvido e o estoque já foi ajustado. Use os ajustes manuais se necessário."}), 409
 
-    if req.fogo_agg:
+    if req.status == "APLICADO" and req.fogo_agg:
         agg = Aggregate.query.filter_by(fogo=req.fogo_agg).first()
         if agg:
             agg.situacao = SIT_DISPONIVEL_RECOND

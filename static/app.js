@@ -60,6 +60,28 @@ async function loadAll() {
   REQS = reqs;
 }
 
+let refreshing = false;
+async function refreshData(silent) {
+  if (refreshing) return;
+  refreshing = true;
+  const btn = $('#btnRefresh');
+  const prevLabel = btn.textContent;
+  btn.textContent = '⏳';
+  try {
+    await loadAll();
+    if (usersLoaded && ME?.role === 'admin') USERS = await api('/users');
+    refreshKpis(); updateNav(); render();
+    if (META.mariadbTs) $('#updDate').textContent = META.mariadbTs;
+    if (!silent) showBanner('info', 'Dados sincronizados.', new Date().toLocaleTimeString('pt-BR'));
+  } catch (e) {
+    if (!silent) showBanner('err', 'Falha ao sincronizar: ' + e.message, '');
+  } finally {
+    btn.textContent = prevLabel;
+    refreshing = false;
+  }
+}
+$('#btnRefresh').onclick = () => refreshData(false);
+
 /* =============== datas =============== */
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const br = iso => iso ? iso.split('-').reverse().join('/') : '–';
@@ -160,6 +182,7 @@ function setView(v) {
   $('#btnAdd').style.display = allowed ? '' : 'none';
   if (addLabel) $('#btnAdd').textContent = addLabel;
   render();
+  if (v === 'rel' || v === 'reqs') refreshData(true);
 }
 document.querySelectorAll('.mod').forEach(m => m.onclick = () => setView(m.dataset.v));
 
@@ -848,14 +871,24 @@ async function devolverReq(reqId) {
     showBanner('ok', 'Requisição devolvida.', '');
   } catch (e) { showBanner('err', 'Falha: ' + e.message, ''); }
 }
-async function cancelarReq(reqId) {
-  if (!confirm('Cancelar esta requisição?')) return;
+async function excluirReq(reqId) {
+  const r = REQS.find(x => x.id === reqId); if (!r) return;
+  let msg;
+  if (r.cascoStatus === 'DEVOLVIDO') {
+    msg = null; // backend vai bloquear e explicar
+  } else if (r.status === 'DEVOLVIDO') {
+    msg = `Excluir o registro desta requisição (${itemName(r.itemId)} · ${r.frota})? Os saldos não serão alterados, só o histórico é removido.`;
+  } else {
+    msg = `Excluir esta requisição (${itemName(r.itemId)} · ${r.frota})? O agregado volta para disponível` +
+      (r.cascoStatus === 'PENDENTE' ? ' e a pendência de casco é removida.' : '.');
+  }
+  if (msg !== null && !confirm(msg)) return;
   try {
     await api(`/requisitions/${reqId}`, { method: 'DELETE' });
-    REQS = REQS.filter(r => r.id !== reqId);
+    REQS = REQS.filter(x => x.id !== reqId);
     const freshAggs = await api('/aggregates'); AGGS = freshAggs;
     updateNav(); render();
-    showBanner('ok', 'Requisição cancelada.', '');
+    showBanner('ok', `Requisição excluída: ${itemName(r.itemId)} · ${r.frota}.`, '');
   } catch (e) { showBanner('err', 'Falha: ' + e.message, ''); }
 }
 function reqCard(r) {
@@ -873,9 +906,10 @@ function reqCard(r) {
     ${r.cascoStatus === 'DEVOLVIDO' ? `<div class="mmeta" style="margin-top:6px">Casco entregue por <b>${esc(r.cascoEntreguePor || '–')}</b> · conf. <b>${esc(r.cascoRecebidoPor || '–')}</b> · ${br(r.dataCasco)}</div>` : ''}
     ${r.cascoStatus === 'NAO_DEVOLVIDO' ? `<div class="latebadge" style="display:inline-block;margin-top:6px">🔩 CASCO NÃO DEVOLVIDO</div><div class="mmeta">${br(r.dataCasco)} · ${esc(r.cascoEntreguePor || '–')}${r.cascoObs ? ' · ' + esc(r.cascoObs) : ''}</div>` : ''}
     <div class="factions" style="margin-top:10px">
-      ${r.entrega === 'PENDENTE' ? `<button class="btn" data-entrega="${r.id}">📦 Confirmar entrega</button>${can.delete() ? `<button class="btn danger" data-cancelar="${r.id}">Cancelar</button>` : ''}` : ''}
+      ${r.entrega === 'PENDENTE' ? `<button class="btn" data-entrega="${r.id}">📦 Confirmar entrega</button>` : ''}
       ${r.status === 'APLICADO' && r.entrega === 'ENTREGUE' && (!r.cascoStatus || r.cascoStatus === 'PENDENTE' || r.cascoStatus === 'NAO_DEVOLVIDO') ? `<button class="btn amber" data-casco="${r.id}">🔩 Receber casco</button>` : ''}
       ${r.status === 'APLICADO' ? `<button class="btn primary" data-devolver="${r.id}">↩ Devolver</button>` : ''}
+      ${can.delete() ? `<button class="btn danger" title="Excluir requisição" data-excluirreq="${r.id}">🗑</button>` : ''}
     </div>
   </div>`;
 }
@@ -887,7 +921,7 @@ function renderReqs() {
   $('#main').querySelectorAll('[data-entrega]').forEach(b => b.onclick = () => confirmarEntrega(b.dataset.entrega));
   $('#main').querySelectorAll('[data-casco]').forEach(b => b.onclick = () => receberCasco(b.dataset.casco));
   $('#main').querySelectorAll('[data-devolver]').forEach(b => b.onclick = () => devolverReq(b.dataset.devolver));
-  $('#main').querySelectorAll('[data-cancelar]').forEach(b => b.onclick = () => cancelarReq(b.dataset.cancelar));
+  $('#main').querySelectorAll('[data-excluirreq]').forEach(b => b.onclick = () => excluirReq(b.dataset.excluirreq));
 }
 
 /* =============== modulo: relatorios =============== */

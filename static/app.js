@@ -244,7 +244,7 @@ function render() {
 /* =============== ficha da peca =============== */
 document.addEventListener('click', e => {
   const t = e.target.closest('.tag'); if (t && state.view === 'pecas') openFicha(t.dataset.id);
-  const overlayIds = ['ov', 'ov2', 'ov3', 'ov4', 'ov5', 'ov6'];
+  const overlayIds = ['ov', 'ov2', 'ov3', 'ov4', 'ov5', 'ov6', 'ov7'];
   if (overlayIds.includes(e.target.id)) $('#' + e.target.id).classList.remove('open');
   if (e.target.closest('[data-close]')) $('#' + e.target.closest('[data-close]').dataset.close).classList.remove('open');
   const chip = e.target.closest('.aggchip'); if (chip) openAggFicha(chip.dataset.fogo);
@@ -256,8 +256,8 @@ document.addEventListener('keydown', e => {
     if (e.key === 'Escape') document.activeElement.blur();
     return;
   }
-  const anyOpen = ['ov', 'ov2', 'ov3', 'ov4', 'ov5', 'ov6'].some(id => $('#' + id).classList.contains('open'));
-  if (e.key === 'Escape') { ['ov', 'ov2', 'ov3', 'ov4', 'ov5', 'ov6'].forEach(id => $('#' + id).classList.remove('open')); return; }
+  const anyOpen = ['ov', 'ov2', 'ov3', 'ov4', 'ov5', 'ov6', 'ov7'].some(id => $('#' + id).classList.contains('open'));
+  if (e.key === 'Escape') { ['ov', 'ov2', 'ov3', 'ov4', 'ov5', 'ov6', 'ov7'].forEach(id => $('#' + id).classList.remove('open')); return; }
   if (anyOpen) return;
   if (e.key === 'Enter' && document.activeElement.classList?.contains('tag')) return openFicha(document.activeElement.dataset.id);
   if (['1', '2', '3', '4', '5'].includes(e.key)) {
@@ -344,6 +344,7 @@ async function delItem(id) {
 
 /* =============== formulário de peça =============== */
 let formImg = null, formMime = null, editId = null;
+let cascoReqId = null;
 function fillCatOptions(sel) {
   const cats = catList();
   $('#f_cat').innerHTML = (cats.length ? cats : ['Geral']).map(c => `<option${c === sel ? ' selected' : ''}>${esc(c)}</option>`).join('') +
@@ -779,17 +780,50 @@ async function confirmarEntrega(reqId) {
     showBanner('ok', 'Entrega confirmada.', '');
   } catch (e) { showBanner('err', 'Falha: ' + e.message, ''); }
 }
-async function receberCasco(reqId) {
-  const novoFogo = prompt('Nº de fogo do casco devolvido (opcional, deixe em branco se não for cadastrar):', '') || '';
+function syncCascoEntregue() {
+  const naoEntregue = $('#c_entregue').value === 'N';
+  $('#c_fogo').disabled = naoEntregue;
+  if (naoEntregue) $('#c_fogo').value = '';
+}
+$('#c_entregue').addEventListener('change', syncCascoEntregue);
+function receberCasco(reqId) {
+  const r = REQS.find(x => x.id === reqId); if (!r) return;
+  cascoReqId = reqId;
+  $('#c_info').textContent = `${itemName(r.itemId)} · Frota ${r.frota}${r.cascoFunc ? ' · Funcionário: ' + r.cascoFunc : ''}`;
+  $('#c_entregue').value = 'S';
+  $('#c_data').value = todayISO();
+  $('#c_quem').value = r.cascoFunc || '';
+  $('#c_fogo').value = '';
+  $('#c_obs').value = '';
+  syncCascoEntregue();
+  $('#cerr').style.display = 'none';
+  $('#ov7').classList.add('open');
+}
+$('#btnSaveCasco').onclick = async () => {
+  const err = m => { $('#cerr').textContent = m; $('#cerr').style.display = 'block'; };
+  const quem = $('#c_quem').value.trim();
+  const data = $('#c_data').value;
+  if (!quem) return err('Informe quem entregou o casco.');
+  if (!data) return err('Informe a data.');
+  const payload = {
+    entregue: $('#c_entregue').value,
+    data, quem,
+    cascoFogo: $('#c_fogo').value.trim(),
+    obs: $('#c_obs').value.trim(),
+    cascoRecebidoPor: ensureOperator(),
+  };
+  $('#btnSaveCasco').disabled = true;
   try {
-    const saved = await api(`/requisitions/${reqId}/casco`, { method: 'POST', body: JSON.stringify({ cascoRecebidoPor: ensureOperator(), novoFogo }) });
-    Object.assign(REQS.find(r => r.id === reqId), saved);
+    const saved = await api(`/requisitions/${cascoReqId}/casco`, { method: 'POST', body: JSON.stringify(payload) });
+    Object.assign(REQS.find(r => r.id === cascoReqId), saved);
     const fresh = await api('/items'); DATA = fresh.items;
     const freshAggs = await api('/aggregates'); AGGS = freshAggs;
     refreshKpis(); updateNav(); render();
-    showBanner('ok', 'Casco recebido.', '');
-  } catch (e) { showBanner('err', 'Falha: ' + e.message, ''); }
-}
+    $('#ov7').classList.remove('open');
+    showBanner('ok', payload.entregue === 'S' ? 'Casco recebido.' : 'Registrado: casco ainda não devolvido.', '');
+  } catch (e) { return err(e.message); }
+  finally { $('#btnSaveCasco').disabled = false; }
+};
 async function devolverReq(reqId) {
   const destino = confirm('A peça devolvida precisa de conserto?\nOK = vai para P/ Conserto · Cancelar = fica disponível') ? 'pc' : 'disponivel';
   try {
@@ -820,12 +854,14 @@ function reqCard(r) {
     <div class="mdet">
       <div>Aplicado <b>${br(r.dataReq)}</b></div>
       <div>Entrega <b>${r.entrega === 'ENTREGUE' ? 'Confirmada' : 'Pendente'}</b></div>
-      ${r.cascoStatus ? `<div>Casco <b>${r.cascoStatus === 'DEVOLVIDO' ? 'Devolvido' : 'Pendente'}</b></div>` : ''}
+      ${r.cascoStatus ? `<div>Casco <b>${r.cascoStatus === 'DEVOLVIDO' ? 'Devolvido' : r.cascoStatus === 'NAO_DEVOLVIDO' ? 'Não devolvido' : 'Pendente'}</b></div>` : ''}
       <div class="mdias">${diasAplicado(r)}<div class="dl">dias</div></div>
     </div>
+    ${r.cascoStatus === 'DEVOLVIDO' ? `<div class="mmeta" style="margin-top:6px">Casco entregue por <b>${esc(r.cascoEntreguePor || '–')}</b> · conf. <b>${esc(r.cascoRecebidoPor || '–')}</b> · ${br(r.dataCasco)}</div>` : ''}
+    ${r.cascoStatus === 'NAO_DEVOLVIDO' ? `<div class="latebadge" style="display:inline-block;margin-top:6px">🔩 CASCO NÃO DEVOLVIDO</div><div class="mmeta">${br(r.dataCasco)} · ${esc(r.cascoEntreguePor || '–')}${r.cascoObs ? ' · ' + esc(r.cascoObs) : ''}</div>` : ''}
     <div class="factions" style="margin-top:10px">
       ${r.entrega === 'PENDENTE' ? `<button class="btn" data-entrega="${r.id}">📦 Confirmar entrega</button><button class="btn danger" data-cancelar="${r.id}">Cancelar</button>` : ''}
-      ${r.status === 'APLICADO' && r.entrega === 'ENTREGUE' && r.cascoStatus === 'PENDENTE' ? `<button class="btn amber" data-casco="${r.id}">🔩 Receber casco</button>` : ''}
+      ${r.status === 'APLICADO' && r.entrega === 'ENTREGUE' && (!r.cascoStatus || r.cascoStatus === 'PENDENTE' || r.cascoStatus === 'NAO_DEVOLVIDO') ? `<button class="btn amber" data-casco="${r.id}">🔩 Receber casco</button>` : ''}
       ${r.status === 'APLICADO' ? `<button class="btn primary" data-devolver="${r.id}">↩ Devolver</button>` : ''}
     </div>
   </div>`;
@@ -971,9 +1007,11 @@ $('#btnExport').onclick = () => {
   for (const m of MOVS) movAoa.push([itemName(m.itemId), m.fogoAgg || '', m.fornecedor, m.qtd, br(m.dataEnvio), br(m.previsaoRetorno), m.status, br(m.dataRetorno)]);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(movAoa), 'Manutencoes');
 
-  const reqAoa = [['REQUISIÇÕES'], [], ['PEÇA', 'FOGO', 'FROTA', 'SOLICITANTE', 'DATA', 'STATUS', 'ENTREGA']];
-  for (const r of REQS) reqAoa.push([itemName(r.itemId), r.fogoAgg || '', r.frota, r.solicitante || '', br(r.dataReq), r.status, r.entrega]);
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(reqAoa), 'Requisicoes');
+  const reqAoa = [['REQUISIÇÕES'], [], ['PEÇA', 'FOGO', 'FROTA', 'SOLICITANTE', 'DATA', 'STATUS', 'ENTREGA', 'CASCO STATUS', 'CASCO Nº FOGO', 'CASCO ENTREGUE POR', 'CONFERIDO POR (ALMOX.)']];
+  for (const r of REQS) reqAoa.push([itemName(r.itemId), r.fogoAgg || '', r.frota, r.solicitante || '', br(r.dataReq), r.status, r.entrega, r.cascoStatus || '', r.cascoFogo || '', r.cascoEntreguePor || '', r.cascoRecebidoPor || '']);
+  const wsReq = XLSX.utils.aoa_to_sheet(reqAoa);
+  wsReq['!cols'] = [{ wch: 30 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 12 }, { wch: 18 }, { wch: 18 }];
+  XLSX.utils.book_append_sheet(wb, wsReq, 'Requisicoes');
 
   XLSX.writeFile(wb, 'Saldos_Pecas_CH570_' + new Date().toISOString().slice(0, 10) + '.xlsx');
   showBanner('ok', 'Planilha exportada com o estado atual do catálogo.', '');

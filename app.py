@@ -447,10 +447,21 @@ def confirmar_entrega(req_id):
 def receber_casco(req_id):
     req = Req.query.get_or_404(req_id)
     payload = request.get_json(force=True)
-    req.casco_status = "DEVOLVIDO"
-    req.data_casco = date.today()
+
+    req.data_casco = parse_date(payload.get("data")) or date.today()
     req.casco_recebido_por = (payload.get("cascoRecebidoPor") or "").strip()
-    novo_fogo = (payload.get("novoFogo") or "").strip().upper()
+    req.casco_entregue_por = (payload.get("quem") or "").strip()
+    req.casco_obs = (payload.get("obs") or "").strip()
+
+    entregue = payload.get("entregue") == "S"
+    if not entregue:
+        req.casco_status = "NAO_DEVOLVIDO"
+        req.casco_fogo = None
+        db.session.commit()
+        return jsonify(req.to_dict())
+
+    req.casco_status = "DEVOLVIDO"
+    novo_fogo = (payload.get("cascoFogo") or "").strip().upper()
     if novo_fogo:
         req.casco_fogo = novo_fogo
 

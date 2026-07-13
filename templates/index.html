@@ -179,6 +179,27 @@
   </div>
 </div></div>
 
+<div class="overlay" id="ov7"><div class="ficha form" id="cascoBox" style="border-top-color:var(--red)">
+  <div class="fh" style="padding:0"><h2 style="flex:1">Confirmar devolução de casco</h2>
+    <button class="fx" data-close="ov7" style="margin:18px 20px 0 0">✕</button></div>
+  <div class="fgrid">
+    <div class="fld full" id="c_info" style="color:var(--mut);font-size:12.5px"></div>
+    <div class="fld"><label>Casco foi entregue?</label><select id="c_entregue">
+      <option value="S">Sim — recebido pelo almoxarifado</option>
+      <option value="N">Não — ainda não devolvido</option>
+    </select></div>
+    <div class="fld"><label>Data *</label><input id="c_data" type="date"></div>
+    <div class="fld"><label>Entregue por *</label><input id="c_quem" maxlength="50"></div>
+    <div class="fld"><label>Nº de fogo do casco</label><input id="c_fogo" maxlength="20" style="text-transform:uppercase"></div>
+    <div class="fld full"><label>Observação</label><input id="c_obs" maxlength="80"></div>
+  </div>
+  <div class="ferr" id="cerr"></div>
+  <div class="formbtns">
+    <button class="btn" data-close="ov7">Cancelar</button>
+    <button class="btn primary" id="btnSaveCasco">Registrar confirmação</button>
+  </div>
+</div></div>
+
 <div id="perPrint"></div>
 
 <footer>Catálogo CH570 · CRV Industrial</footer>

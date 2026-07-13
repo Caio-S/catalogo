@@ -163,11 +163,13 @@ class Req(db.Model):
     entrega = db.Column(db.String(20), nullable=False, default="PENDENTE")  # PENDENTE | ENTREGUE
     data_entrega = db.Column(db.Date)
     entregue_por = db.Column(db.String(60))
-    casco_status = db.Column(db.String(20))  # None | PENDENTE | DEVOLVIDO
+    casco_status = db.Column(db.String(20))  # None | PENDENTE | DEVOLVIDO | NAO_DEVOLVIDO
     casco_func = db.Column(db.String(60))
     casco_fogo = db.Column(db.String(20))
     data_casco = db.Column(db.Date)
     casco_recebido_por = db.Column(db.String(60))
+    casco_entregue_por = db.Column(db.String(60))
+    casco_obs = db.Column(db.Text)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     item = db.relationship("Item")
@@ -192,4 +194,6 @@ class Req(db.Model):
             "cascoFogo": self.casco_fogo,
             "dataCasco": self.data_casco.isoformat() if self.data_casco else None,
             "cascoRecebidoPor": self.casco_recebido_por,
+            "cascoEntreguePor": self.casco_entregue_por,
+            "cascoObs": self.casco_obs,
         }

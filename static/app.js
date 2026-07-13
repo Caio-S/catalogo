@@ -48,6 +48,41 @@ async function api(path, opts) {
   return res.json();
 }
 
+function uiDialog(opt) {
+  return new Promise(res => {
+    $('#uiTitle').textContent = opt.title || 'Confirmação';
+    $('#uiMsg').textContent = opt.msg || '';
+    const hasIn = !!opt.input;
+    $('#uiInwrap').style.display = hasIn ? '' : 'none';
+    if (hasIn) $('#uiInput').value = opt.def || '';
+    const ok = $('#uiOk');
+    ok.textContent = opt.okLabel || 'Confirmar';
+    ok.className = 'btn ' + (opt.danger ? 'danger' : 'primary');
+    $('#uiBox').style.borderTopColor = opt.danger ? 'var(--red)' : 'var(--green)';
+    const done = v => {
+      $('#ov9').classList.remove('open');
+      ok.onclick = null; $('#uiCancel').onclick = null;
+      document.removeEventListener('keydown', esc, true);
+      $('#ov9').onclick = null;
+      res(v);
+    };
+    const esc = e => {
+      if (e.key === 'Escape') { e.stopPropagation(); done(hasIn ? null : false); }
+      if (e.key === 'Enter' && hasIn) { e.stopPropagation(); done($('#uiInput').value); }
+    };
+    ok.onclick = () => done(hasIn ? $('#uiInput').value : true);
+    $('#uiCancel').onclick = () => done(hasIn ? null : false);
+    $('#ov9').onclick = e => { if (e.target.id === 'ov9') done(hasIn ? null : false); };
+    document.addEventListener('keydown', esc, true);
+    $('#ov9').classList.add('open');
+    if (hasIn) setTimeout(() => $('#uiInput').focus(), 60);
+  });
+}
+const uiConfirm = (msg, opt) => uiDialog(Object.assign({ msg }, opt || {}));
+const uiPrompt = (msg, def, opt) => uiDialog(Object.assign({ msg, input: true, def }, opt || {}));
+let busyAction = false;
+async function guarded(fn) { if (busyAction) return; busyAction = true; try { await fn(); } finally { busyAction = false; } }
+
 async function loadAll() {
   const [items, aggs, movs, reqs] = await Promise.all([
     api('/items'), api('/aggregates'), api('/movs'), api('/requisitions'),
@@ -108,13 +143,13 @@ function diasAplicado(r) {
 function getOperator() {
   return localStorage.getItem('operador') || '';
 }
-function trocarOperador() {
-  const n = prompt('Seu nome (fica registrado nas ações):', getOperator());
+async function trocarOperador() {
+  const n = await uiPrompt('Seu nome (fica registrado nas ações):', getOperator(), { title: 'Identificação', okLabel: 'Salvar' });
   if (n && n.trim()) { localStorage.setItem('operador', n.trim()); return n.trim(); }
   return getOperator();
 }
-function ensureOperator() {
-  return getOperator() || trocarOperador();
+async function ensureOperator() {
+  return getOperator() || await trocarOperador();
 }
 
 /* =============== situacao de agregado =============== */
@@ -373,9 +408,9 @@ function openFicha(id) {
   $('#btnNovoAgg') && ($('#btnNovoAgg').onclick = () => { $('#ov').classList.remove('open'); openAggForm(null, id); });
   $('#ficha [data-retorno]').forEach(btn => btn.onclick = () => registrarRetorno(btn.dataset.retorno));
 }
-async function delItem(id) {
+async function delItem(id) { await guarded(async () => {
   const d = byId(id);
-  if (!confirm(`Excluir a peça "${d.desc}"?`)) return;
+  if (!await uiConfirm(`Excluir a peça "${d.desc}"?`, { title: 'Excluir peça', danger: true, okLabel: 'Excluir' })) return;
   try {
     await api(`/items/${id}`, { method: 'DELETE' });
     DATA = DATA.filter(x => x.id !== id);
@@ -383,7 +418,7 @@ async function delItem(id) {
     $('#ov').classList.remove('open');
     showBanner('ok', `Peça excluída: ${d.desc}`, '');
   } catch (err) { showBanner('err', 'Falha ao excluir: ' + err.message, ''); }
-}
+}); }
 
 /* =============== formulário de peça =============== */
 let formImg = null, formMime = null, editId = null;
@@ -393,9 +428,9 @@ function fillCatOptions(sel) {
   $('#f_cat').innerHTML = (cats.length ? cats : ['Geral']).map(c => `<option${c === sel ? ' selected' : ''}>${esc(c)}</option>`).join('') +
     `<option value="__nova__">+ Nova categoria…</option>`;
 }
-$('#f_cat').addEventListener('change', e => {
+$('#f_cat').addEventListener('change', async e => {
   if (e.target.value === '__nova__') {
-    const n = prompt('Nome da nova categoria:');
+    const n = await uiPrompt('Nome da nova categoria:', '', { title: 'Nova categoria', okLabel: 'Criar' });
     if (n && n.trim()) { const v = n.trim().replace(/\b\w/g, c => c.toUpperCase());
       e.target.insertAdjacentHTML('afterbegin', `<option selected>${esc(v)}</option>`); }
     else fillCatOptions(catList()[0]);
@@ -526,16 +561,16 @@ $('#btnAgg').onclick = async () => {
   } catch (e) { return err(e.message); }
   finally { $('#btnAgg').disabled = false; }
 };
-async function delAgg(id) {
+async function delAgg(id) { await guarded(async () => {
   const a = AGGS.find(x => x.id === id); if (!a) return;
-  if (!confirm(`Excluir o agregado ${a.fogo}?`)) return;
+  if (!await uiConfirm(`Excluir o agregado ${a.fogo}?`, { title: 'Excluir agregado', danger: true, okLabel: 'Excluir' })) return;
   try {
     await api(`/aggregates/${id}`, { method: 'DELETE' });
     AGGS = AGGS.filter(x => x.id !== id);
     updateNav(); render();
     showBanner('ok', `Agregado ${a.fogo} excluído.`, '');
   } catch (e) { showBanner('err', 'Falha ao excluir: ' + e.message, ''); }
-}
+}); }
 function openAggFicha(fogo) {
   const a = aggByFogo(fogo); if (!a) return;
   const eventos = [
@@ -631,7 +666,7 @@ $('#btnEnvio').onclick = async () => {
   const fornecedor = $('#e_forn').value.trim();
   if (!itemId) return err('Selecione a peça.');
   if (!fornecedor) return err('Informe o fornecedor.');
-  const op = ensureOperator();
+  const op = await ensureOperator();
   const base = {
     itemId, fornecedor,
     dataEnvio: $('#e_data').value || todayISO(),
@@ -664,11 +699,11 @@ $('#btnEnvio').onclick = async () => {
   } catch (e) { return err(e.message); }
   finally { $('#btnEnvio').disabled = false; }
 };
-async function registrarRetorno(movId) {
-  if (!confirm('Confirmar retorno deste envio?')) return;
-  const nfDevolucao = prompt('Nota de devolução (opcional):', '') || '';
+async function registrarRetorno(movId) { await guarded(async () => {
+  if (!await uiConfirm('Confirmar retorno deste envio?', { title: 'Retorno do fornecedor', okLabel: 'Registrar retorno' })) return;
+  const nfDevolucao = (await uiPrompt('Nota de devolução (opcional):', '', { title: 'NF de devolução', okLabel: 'Salvar' })) || '';
   try {
-    const saved = await api(`/movs/${movId}/retorno`, { method: 'POST', body: JSON.stringify({ nfDevolucao, retornadoPor: ensureOperator() }) });
+    const saved = await api(`/movs/${movId}/retorno`, { method: 'POST', body: JSON.stringify({ nfDevolucao, retornadoPor: await ensureOperator() }) });
     Object.assign(MOVS.find(m => m.id === movId), saved);
     const fresh = await api('/items'); DATA = fresh.items;
     const freshAggs = await api('/aggregates'); AGGS = freshAggs;
@@ -676,7 +711,7 @@ async function registrarRetorno(movId) {
     $('#ov').classList.remove('open');
     showBanner('ok', 'Retorno registrado.', '');
   } catch (e) { showBanner('err', 'Falha: ' + e.message, ''); }
-}
+}); }
 function openDocs(movId) {
   const m = MOVS.find(x => x.id === movId); if (!m) return;
   $('#d_nf').value = m.nfRemessa || ''; $('#d_orc').value = m.orcamento || '';
@@ -836,14 +871,14 @@ $('#btnReq').onclick = async () => {
   } catch (e) { return err(e.message); }
   finally { $('#btnReq').disabled = false; }
 };
-async function confirmarEntrega(reqId) {
+async function confirmarEntrega(reqId) { await guarded(async () => {
   try {
-    const saved = await api(`/requisitions/${reqId}/entrega`, { method: 'POST', body: JSON.stringify({ entreguePor: ensureOperator() }) });
+    const saved = await api(`/requisitions/${reqId}/entrega`, { method: 'POST', body: JSON.stringify({ entreguePor: await ensureOperator() }) });
     Object.assign(REQS.find(r => r.id === reqId), saved);
     render();
     showBanner('ok', 'Entrega confirmada.', '');
   } catch (e) { showBanner('err', 'Falha: ' + e.message, ''); }
-}
+}); }
 function syncCascoEntregue() {
   const naoEntregue = $('#c_entregue').value === 'N';
   $('#c_fogo').disabled = naoEntregue;
@@ -881,7 +916,7 @@ $('#btnSaveCasco').onclick = async () => {
   let cascoFogo = $('#c_fogo').value;
 
   if (entregue === 'S' && cascoFogo === '__novo__') {
-    const novo = (prompt('Nº de fogo do casco recebido (novo cadastro):', '') || '').trim().toUpperCase();
+    const novo = ((await uiPrompt('Nº de fogo do casco recebido (novo cadastro):', '', { title: 'Cadastrar casco', okLabel: 'Cadastrar' })) || '').trim().toUpperCase();
     if (!novo) return err('Informe o nº de fogo do casco.');
     if (aggByFogo(novo)) return err(`Nº de fogo ${novo} já está cadastrado — selecione-o na lista.`);
     try {
@@ -895,7 +930,7 @@ $('#btnSaveCasco').onclick = async () => {
   }
   if (entregue === 'N') cascoFogo = '';
 
-  const payload = { entregue, data, quem, cascoFogo, obs: $('#c_obs').value.trim(), cascoRecebidoPor: ensureOperator() };
+  const payload = { entregue, data, quem, cascoFogo, obs: $('#c_obs').value.trim(), cascoRecebidoPor: await ensureOperator() };
   $('#btnSaveCasco').disabled = true;
   try {
     const saved = await api(`/requisitions/${cascoReqId}/casco`, { method: 'POST', body: JSON.stringify(payload) });
@@ -911,29 +946,29 @@ $('#btnSaveCasco').onclick = async () => {
   } catch (e) { return err(e.message); }
   finally { $('#btnSaveCasco').disabled = false; }
 };
-async function devolverReq(reqId) {
-  const destino = confirm('A peça devolvida precisa de conserto?\nOK = vai para P/ Conserto · Cancelar = fica disponível') ? 'pc' : 'disponivel';
+async function devolverReq(reqId) { await guarded(async () => {
+  const destino = await uiConfirm('A peça devolvida precisa de conserto?\nOK = vai para P/ Conserto · Cancelar = fica disponível', { title: 'Devolução da frota', okLabel: 'Precisa de conserto' }) ? 'pc' : 'disponivel';
   try {
-    const saved = await api(`/requisitions/${reqId}/devolucao`, { method: 'POST', body: JSON.stringify({ destino, registradoPor: ensureOperator() }) });
+    const saved = await api(`/requisitions/${reqId}/devolucao`, { method: 'POST', body: JSON.stringify({ destino, registradoPor: await ensureOperator() }) });
     Object.assign(REQS.find(r => r.id === reqId), saved);
     const fresh = await api('/items'); DATA = fresh.items;
     const freshAggs = await api('/aggregates'); AGGS = freshAggs;
     refreshKpis(); updateNav(); render();
     showBanner('ok', 'Requisição devolvida.', '');
   } catch (e) { showBanner('err', 'Falha: ' + e.message, ''); }
-}
-async function excluirReq(reqId) {
+}); }
+async function excluirReq(reqId) { await guarded(async () => {
   const r = REQS.find(x => x.id === reqId); if (!r) return;
   let msg;
   if (r.cascoStatus === 'DEVOLVIDO') {
-    msg = null; // backend vai bloquear e explicar
+    msg = `Excluir esta requisição (${itemName(r.itemId)} · ${r.frota})? O casco já foi devolvido: o estoque será revertido automaticamente (agregado volta a Aplicado, ou saldo P/ Conserto é estornado). Se o casco já seguiu para o fornecedor, a exclusão será bloqueada.`;
   } else if (r.status === 'DEVOLVIDO') {
     msg = `Excluir o registro desta requisição (${itemName(r.itemId)} · ${r.frota})? Os saldos não serão alterados, só o histórico é removido.`;
   } else {
     msg = `Excluir esta requisição (${itemName(r.itemId)} · ${r.frota})? O agregado volta para disponível` +
       (cascoPendente(r) ? ' e a pendência de casco é removida.' : '.');
   }
-  if (msg !== null && !confirm(msg)) return;
+  if (!await uiConfirm(msg, { title: 'Excluir requisição', danger: true, okLabel: 'Excluir e reverter' })) return;
   try {
     await api(`/requisitions/${reqId}`, { method: 'DELETE' });
     REQS = REQS.filter(x => x.id !== reqId);
@@ -941,7 +976,7 @@ async function excluirReq(reqId) {
     updateNav(); render();
     showBanner('ok', `Requisição excluída: ${itemName(r.itemId)} · ${r.frota}.`, '');
   } catch (e) { showBanner('err', 'Falha: ' + e.message, ''); }
-}
+}); }
 function reqCard(r) {
   return `<div class="mrowcard ${r.status === 'DEVOLVIDO' ? 'done' : cascoPendente(r) ? 'late' : ''}">
     <div class="mtop">
@@ -1146,16 +1181,16 @@ $('#btnUser').onclick = async () => {
   } catch (e) { return err(e.message); }
   finally { $('#btnUser').disabled = false; }
 };
-async function deleteUser(userId) {
+async function deleteUser(userId) { await guarded(async () => {
   const u = USERS.find(x => x.id === userId); if (!u) return;
-  if (!confirm(`Excluir o usuário ${u.name}?`)) return;
+  if (!await uiConfirm(`Excluir o usuário ${u.name}?`, { title: 'Excluir usuário', danger: true, okLabel: 'Excluir' })) return;
   try {
     await api(`/users/${userId}`, { method: 'DELETE' });
     USERS = USERS.filter(x => x.id !== userId);
     updateNav(); render();
     showBanner('ok', `Usuário ${u.name} excluído.`, '');
   } catch (e) { showBanner('err', 'Falha: ' + e.message, ''); }
-}
+}); }
 function userCard(u) {
   return `<div class="mrowcard ${u.ativo ? '' : 'done'}">
     <div class="mtop">

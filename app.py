@@ -407,6 +407,14 @@ def delete_aggregate(agg_id):
     bloqueio = open_mov_or_req_for_fogo(agg.fogo)
     if bloqueio:
         return jsonify({"error": f"Não é possível excluir: o agregado {bloqueio}."}), 409
+    tem_historico = (
+        Mov.query.filter_by(fogo_agg=agg.fogo).first()
+        or Req.query.filter(
+            (Req.fogo_agg == agg.fogo) | (Req.casco_fogo == agg.fogo)
+        ).first()
+    )
+    if tem_historico:
+        return jsonify({"error": f"Não é possível excluir: o agregado {agg.fogo} possui movimentações (envios ou requisições) registradas. Altere a situação para Baixado se necessário."}), 409
     db.session.delete(agg)
     db.session.commit()
     return "", 204
@@ -684,15 +692,16 @@ def devolver_requisition(req_id):
     req.data_dev = date.today()
     req.registrado_por = (payload.get("registradoPor") or "").strip() or req.registrado_por
 
-    item = db.session.get(Item, req.item_id)
-    if destino == "pc" and item:
-        bump(item, "pc", 1)
-
-    if req.fogo_agg:
-        agg = Aggregate.query.filter_by(fogo=req.fogo_agg).first()
-        if agg:
-            agg.situacao = SIT_P_CONSERTO if destino == "pc" else SIT_DISPONIVEL_RECOND
-            agg.maquina = None
+    agg = Aggregate.query.filter_by(fogo=req.fogo_agg).first() if req.fogo_agg else None
+    if agg:
+        # ha agregado vinculado: so transiciona a situacao dele, sem somar no saldo
+        # (evita contar em duplicidade com o agregado, mesma logica do receber_casco)
+        agg.situacao = SIT_P_CONSERTO if destino == "pc" else SIT_DISPONIVEL_RECOND
+        agg.maquina = None
+    elif destino == "pc":
+        item = db.session.get(Item, req.item_id)
+        if item:
+            bump(item, "pc", 1)
 
     db.session.commit()
     return jsonify(req.to_dict())
@@ -702,8 +711,24 @@ def devolver_requisition(req_id):
 @require_role(ROLE_ADMIN)
 def cancelar_requisition(req_id):
     req = Req.query.get_or_404(req_id)
+
     if req.casco_status == "DEVOLVIDO":
-        return jsonify({"error": "Não é possível excluir: o casco já foi devolvido e o estoque já foi ajustado. Use os ajustes manuais se necessário."}), 409
+        if req.casco_fogo:
+            casco_agg = Aggregate.query.filter_by(fogo=req.casco_fogo).first()
+            if casco_agg:
+                if casco_agg.situacao == SIT_NO_FORNECEDOR:
+                    return jsonify({"error": f"Não é possível excluir: o casco {req.casco_fogo} já foi enviado ao fornecedor. Registre o retorno dele antes de excluir esta requisição."}), 409
+                if casco_agg.situacao == SIT_P_CONSERTO:
+                    casco_agg.situacao = SIT_APLICADO
+                    casco_agg.maquina = req.frota
+            else:
+                item = db.session.get(Item, req.item_id)
+                if item:
+                    bump(item, "pc", -1)
+        else:
+            item = db.session.get(Item, req.item_id)
+            if item:
+                bump(item, "pc", -1)
 
     if req.status == "APLICADO" and req.fogo_agg:
         agg = Aggregate.query.filter_by(fogo=req.fogo_agg).first()

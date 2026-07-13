@@ -92,6 +92,9 @@ function diasEntreDatas(a, b) {
 function atrasado(m) {
   return m.status === 'NO_FORNECEDOR' && m.previsaoRetorno && m.previsaoRetorno < todayISO();
 }
+function cascoPendente(r) {
+  return r.cascoStatus === 'PENDENTE' || r.cascoStatus === 'NAO_DEVOLVIDO';
+}
 function diasFora(m) {
   const fim = m.status === 'RETORNADO' && m.dataRetorno ? m.dataRetorno : todayISO();
   return diasEntreDatas(m.dataEnvio, fim);
@@ -151,7 +154,7 @@ function updateNav() {
   const atrasados = MOVS.filter(atrasado).length;
   $('#nv-movs').textContent = noForn + ' no fornecedor' + (atrasados ? ` · ${atrasados} atrasado(s)` : '');
   const aplicadas = REQS.filter(r => r.status === 'APLICADO').length;
-  const cascos = REQS.filter(r => r.cascoStatus === 'PENDENTE').length;
+  const cascos = REQS.filter(cascoPendente).length;
   $('#nv-reqs').textContent = aplicadas + ' na frota' + (cascos ? ` · ${cascos} casco(s) pend.` : '');
 }
 
@@ -900,7 +903,7 @@ async function excluirReq(reqId) {
     msg = `Excluir o registro desta requisição (${itemName(r.itemId)} · ${r.frota})? Os saldos não serão alterados, só o histórico é removido.`;
   } else {
     msg = `Excluir esta requisição (${itemName(r.itemId)} · ${r.frota})? O agregado volta para disponível` +
-      (r.cascoStatus === 'PENDENTE' ? ' e a pendência de casco é removida.' : '.');
+      (cascoPendente(r) ? ' e a pendência de casco é removida.' : '.');
   }
   if (msg !== null && !confirm(msg)) return;
   try {
@@ -912,7 +915,7 @@ async function excluirReq(reqId) {
   } catch (e) { showBanner('err', 'Falha: ' + e.message, ''); }
 }
 function reqCard(r) {
-  return `<div class="mrowcard ${r.status === 'DEVOLVIDO' ? 'done' : ''}">
+  return `<div class="mrowcard ${r.status === 'DEVOLVIDO' ? 'done' : cascoPendente(r) ? 'late' : ''}">
     <div class="mtop">
       <div class="mpart">${r.fogoAgg ? `<span class="fogo">${esc(r.fogoAgg)}</span>` : ''}${esc(itemName(r.itemId))}</div>
       <div class="mforn">${esc(r.frota)}</div>
@@ -923,11 +926,12 @@ function reqCard(r) {
       ${r.cascoStatus ? `<div>Casco <b>${r.cascoStatus === 'DEVOLVIDO' ? 'Devolvido' : r.cascoStatus === 'NAO_DEVOLVIDO' ? 'Não devolvido' : 'Pendente'}</b></div>` : ''}
       <div class="mdias">${diasAplicado(r)}<div class="dl">dias</div></div>
     </div>
-    ${r.cascoStatus === 'DEVOLVIDO' ? `<div class="mmeta" style="margin-top:6px">Casco entregue por <b>${esc(r.cascoEntreguePor || '–')}</b> · conf. <b>${esc(r.cascoRecebidoPor || '–')}</b> · ${br(r.dataCasco)}</div>` : ''}
+    ${r.cascoStatus === 'PENDENTE' ? `<div class="latebadge" style="display:inline-block;margin-top:6px">🔩 CASCO PENDENTE · ${esc(r.cascoFunc || '–')}</div>` : ''}
     ${r.cascoStatus === 'NAO_DEVOLVIDO' ? `<div class="latebadge" style="display:inline-block;margin-top:6px">🔩 CASCO NÃO DEVOLVIDO</div><div class="mmeta">${br(r.dataCasco)} · ${esc(r.cascoEntreguePor || '–')}${r.cascoObs ? ' · ' + esc(r.cascoObs) : ''}</div>` : ''}
+    ${r.cascoStatus === 'DEVOLVIDO' ? `<div class="mmeta" style="margin-top:6px">Casco entregue por <b>${esc(r.cascoEntreguePor || '–')}</b> · conf. <b>${esc(r.cascoRecebidoPor || '–')}</b> · ${br(r.dataCasco)}</div>` : ''}
     <div class="factions" style="margin-top:10px">
       ${r.entrega === 'PENDENTE' ? `<button class="btn" data-entrega="${r.id}">📦 Confirmar entrega</button>` : ''}
-      ${r.status === 'APLICADO' && r.entrega === 'ENTREGUE' && (!r.cascoStatus || r.cascoStatus === 'PENDENTE' || r.cascoStatus === 'NAO_DEVOLVIDO') ? `<button class="btn amber" data-casco="${r.id}">🔩 Receber casco</button>` : ''}
+      ${r.status === 'APLICADO' && r.entrega === 'ENTREGUE' && cascoPendente(r) ? `<button class="btn amber" data-casco="${r.id}">🔩 Receber casco</button>` : ''}
       ${r.status === 'APLICADO' ? `<button class="btn primary" data-devolver="${r.id}">↩ Devolver</button>` : ''}
       ${can.delete() ? `<button class="btn danger" title="Excluir requisição" data-excluirreq="${r.id}">🗑</button>` : ''}
     </div>
@@ -961,7 +965,7 @@ function renderRel() {
   const forNaoRetornados = MOVS.filter(m => m.status === 'NO_FORNECEDOR');
   const atrasados = forNaoRetornados.filter(atrasado);
   const aplicadas = REQS.filter(r => r.status === 'APLICADO');
-  const cascosPend = REQS.filter(r => r.cascoStatus === 'PENDENTE');
+  const cascosPend = REQS.filter(cascoPendente);
 
   // consistencia
   const divergentes = DATA.map(d => ({ d, msg: checkConsist(d) })).filter(x => x.msg);
@@ -1028,10 +1032,14 @@ function renderRel() {
         : '<span style="color:var(--mut);font-size:13px">Nenhuma requisição ativa.</span>'}
     </div>
 
-    <div class="rsec"><div class="rtitle">🔩 Cascos pendentes</div>
-      ${cascosPend.length ? `<table class="rtable"><tr><th>Peça</th><th>Frota</th><th>Solicitante</th><th>Desde</th></tr>
-        ${cascosPend.map(r => `<tr><td>${esc(itemName(r.itemId))}</td><td>${esc(r.frota)}</td><td>${esc(r.solicitante || '–')}</td><td>${br(r.dataReq)}</td></tr>`).join('')}</table>`
-        : '<span style="color:var(--mut);font-size:13px">Nenhum casco pendente.</span>'}
+    <div class="rsec"><div class="rtitle" style="color:var(--red)">🔩 Cascos pendentes</div>
+      ${cascosPend.length ? `<table class="rtable"><tr><th>Funcionário</th><th>Peça</th><th>Frota</th><th>Situação</th><th>Desde</th></tr>
+        ${[...cascosPend].sort((a, b) => diasAplicado(b) - diasAplicado(a)).map(r => `<tr class="rlink" data-relgo="item" data-arg="${r.itemId}">
+          <td><b>${esc(r.cascoFunc || r.cascoEntreguePor || r.solicitante || '–')}</b></td>
+          <td>${esc(itemName(r.itemId))}</td><td>${esc(r.frota)}</td>
+          <td>${r.cascoStatus === 'NAO_DEVOLVIDO' ? '<b style="color:var(--red)">NÃO DEVOLVIDO</b>' : '<span style="color:var(--amber)">PENDENTE</span>'}</td>
+          <td>${br(r.dataEntrega || r.dataReq)}</td></tr>`).join('')}</table>`
+        : '<span style="color:var(--green);font-size:13px">✔ Nenhum casco pendente de devolução.</span>'}
     </div>
 
     <div class="rsec"><div class="rtitle">Situação dos agregados cadastrados</div>

@@ -1,8 +1,42 @@
 from datetime import datetime
 
 from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import check_password_hash, generate_password_hash
 
 db = SQLAlchemy()
+
+ROLE_ADMIN = "admin"
+ROLE_GESTOR = "gestor"
+ROLE_ALMOXARIFADO = "almoxarifado"
+ROLE_LABELS = {ROLE_ADMIN: "Administrador", ROLE_GESTOR: "Gestor", ROLE_ALMOXARIFADO: "Almoxarifado"}
+
+
+class User(db.Model):
+    __tablename__ = "users"
+
+    id = db.Column(db.String(40), primary_key=True)
+    username = db.Column(db.String(60), unique=True, nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    name = db.Column(db.String(80), nullable=False)
+    role = db.Column(db.String(20), nullable=False, default=ROLE_GESTOR)
+    ativo = db.Column(db.Boolean, default=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def set_password(self, pw):
+        self.password_hash = generate_password_hash(pw)
+
+    def check_password(self, pw):
+        return check_password_hash(self.password_hash, pw)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "username": self.username,
+            "name": self.name,
+            "role": self.role,
+            "roleLabel": ROLE_LABELS.get(self.role, self.role),
+            "ativo": self.ativo,
+        }
 
 
 class Item(db.Model):

@@ -6,3 +6,4 @@ venv/
 instance/
 *.db
 .DS_Store
+desktop.ini

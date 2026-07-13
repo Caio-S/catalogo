@@ -1,14 +1,18 @@
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from functools import wraps
 
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 
 from models import (
+    ROLE_ADMIN,
+    ROLE_ALMOXARIFADO,
+    ROLE_GESTOR,
     SIT_APLICADO,
     SIT_DISPONIVEL_NOVO,
     SIT_DISPONIVEL_RECOND,
@@ -19,6 +23,7 @@ from models import (
     Meta,
     Mov,
     Req,
+    User,
     db,
 )
 
@@ -37,6 +42,7 @@ elif db_url.startswith("postgresql://"):
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True}
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev")
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=14)
 
 db.init_app(app)
 
@@ -93,12 +99,139 @@ def set_meta(key, value):
     row.value = value
 
 
+# =============== autenticacao ===============
+
+
+def current_user():
+    uid = session.get("user_id")
+    if not uid:
+        return None
+    return db.session.get(User, uid)
+
+
+def login_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if not current_user():
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Sessão expirada, faça login novamente."}), 401
+            return redirect(url_for("login_page"))
+        return f(*args, **kwargs)
+    return wrapper
+
+
+def require_role(*roles):
+    def decorator(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            u = current_user()
+            if not u:
+                return jsonify({"error": "Sessão expirada, faça login novamente."}), 401
+            if u.role not in roles:
+                return jsonify({"error": "Você não tem permissão para esta ação."}), 403
+            return f(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+@app.route("/login")
+def login_page():
+    if current_user():
+        return redirect(url_for("index"))
+    return render_template("login.html")
+
+
+@app.route("/api/login", methods=["POST"])
+def api_login():
+    payload = request.get_json(force=True)
+    username = str(payload.get("username", "")).strip().lower()
+    password = payload.get("password") or ""
+    u = User.query.filter_by(username=username).first()
+    if not u or not u.ativo or not u.check_password(password):
+        return jsonify({"error": "Usuário ou senha inválidos."}), 401
+    session.clear()
+    session["user_id"] = u.id
+    session.permanent = True
+    return jsonify(u.to_dict())
+
+
+@app.route("/api/logout", methods=["POST"])
+def api_logout():
+    session.clear()
+    return "", 204
+
+
+@app.route("/api/me")
+def api_me():
+    u = current_user()
+    if not u:
+        return jsonify({"error": "Não autenticado."}), 401
+    return jsonify(u.to_dict())
+
+
+@app.route("/api/users", methods=["GET"])
+@require_role(ROLE_ADMIN)
+def list_users():
+    return jsonify([u.to_dict() for u in User.query.order_by(User.username).all()])
+
+
+@app.route("/api/users", methods=["POST"])
+@require_role(ROLE_ADMIN)
+def create_user():
+    payload = request.get_json(force=True)
+    username = str(payload.get("username", "")).strip().lower()
+    name = str(payload.get("name", "")).strip()
+    role = payload.get("role") if payload.get("role") in (ROLE_ADMIN, ROLE_GESTOR, ROLE_ALMOXARIFADO) else ROLE_GESTOR
+    pw = payload.get("password") or ""
+    if not username or not name or len(pw) < 4:
+        return jsonify({"error": "Usuário, nome e senha (mín. 4 caracteres) são obrigatórios."}), 400
+    if User.query.filter_by(username=username).first():
+        return jsonify({"error": "Já existe um usuário com esse login."}), 409
+    u = User(id=new_id("u"), username=username, name=name, role=role, ativo=True)
+    u.set_password(pw)
+    db.session.add(u)
+    db.session.commit()
+    return jsonify(u.to_dict()), 201
+
+
+@app.route("/api/users/<uid>", methods=["PUT"])
+@require_role(ROLE_ADMIN)
+def update_user(uid):
+    u = User.query.get_or_404(uid)
+    payload = request.get_json(force=True)
+    if "name" in payload:
+        u.name = str(payload.get("name", "")).strip()
+    if payload.get("role") in (ROLE_ADMIN, ROLE_GESTOR, ROLE_ALMOXARIFADO):
+        u.role = payload["role"]
+    if "ativo" in payload:
+        u.ativo = bool(payload["ativo"])
+    if payload.get("password"):
+        if len(payload["password"]) < 4:
+            return jsonify({"error": "Senha precisa ter ao menos 4 caracteres."}), 400
+        u.set_password(payload["password"])
+    db.session.commit()
+    return jsonify(u.to_dict())
+
+
+@app.route("/api/users/<uid>", methods=["DELETE"])
+@require_role(ROLE_ADMIN)
+def delete_user(uid):
+    u = User.query.get_or_404(uid)
+    if u.id == current_user().id:
+        return jsonify({"error": "Você não pode excluir seu próprio usuário."}), 400
+    db.session.delete(u)
+    db.session.commit()
+    return "", 204
+
+
 @app.route("/")
+@login_required
 def index():
-    return render_template("index.html")
+    return render_template("index.html", user=current_user().to_dict())
 
 
 @app.route("/api/items", methods=["GET"])
+@login_required
 def list_items():
     items = Item.query.order_by(Item.cat, Item.n).all()
     return jsonify(
@@ -111,6 +244,7 @@ def list_items():
 
 
 @app.route("/api/items", methods=["POST"])
+@require_role(ROLE_ADMIN, ROLE_GESTOR)
 def create_item():
     payload = request.get_json(force=True)
     desc = str(payload.get("desc", "")).strip()
@@ -135,6 +269,7 @@ def create_item():
 
 
 @app.route("/api/items/<item_id>", methods=["PUT"])
+@require_role(ROLE_ADMIN, ROLE_GESTOR)
 def update_item(item_id):
     item = Item.query.get_or_404(item_id)
     payload = request.get_json(force=True)
@@ -160,6 +295,7 @@ def update_item(item_id):
 
 
 @app.route("/api/items/<item_id>", methods=["DELETE"])
+@require_role(ROLE_ADMIN)
 def delete_item(item_id):
     item = Item.query.get_or_404(item_id)
     db.session.delete(item)
@@ -200,6 +336,7 @@ def open_mov_or_req_for_fogo(fogo):
 
 
 @app.route("/api/aggregates", methods=["GET"])
+@login_required
 def list_aggregates():
     q = Aggregate.query
     item_id = request.args.get("itemId")
@@ -213,6 +350,7 @@ def list_aggregates():
 
 
 @app.route("/api/aggregates", methods=["POST"])
+@require_role(ROLE_ADMIN, ROLE_GESTOR)
 def create_aggregate():
     payload = request.get_json(force=True)
     fogo = str(payload.get("fogo", "")).strip().upper()
@@ -239,6 +377,7 @@ def create_aggregate():
 
 
 @app.route("/api/aggregates/<agg_id>", methods=["PUT"])
+@require_role(ROLE_ADMIN, ROLE_GESTOR)
 def update_aggregate(agg_id):
     agg = Aggregate.query.get_or_404(agg_id)
     payload = request.get_json(force=True)
@@ -262,6 +401,7 @@ def update_aggregate(agg_id):
 
 
 @app.route("/api/aggregates/<agg_id>", methods=["DELETE"])
+@require_role(ROLE_ADMIN)
 def delete_aggregate(agg_id):
     agg = Aggregate.query.get_or_404(agg_id)
     bloqueio = open_mov_or_req_for_fogo(agg.fogo)
@@ -276,6 +416,7 @@ def delete_aggregate(agg_id):
 
 
 @app.route("/api/movs", methods=["GET"])
+@login_required
 def list_movs():
     q = Mov.query
     item_id = request.args.get("itemId")
@@ -289,6 +430,7 @@ def list_movs():
 
 
 @app.route("/api/movs", methods=["POST"])
+@require_role(ROLE_ADMIN, ROLE_GESTOR)
 def create_mov():
     payload = request.get_json(force=True)
     item_id = payload.get("itemId")
@@ -336,6 +478,7 @@ def create_mov():
 
 
 @app.route("/api/movs/<mov_id>/retorno", methods=["POST"])
+@require_role(ROLE_ADMIN, ROLE_GESTOR, ROLE_ALMOXARIFADO)
 def retornar_mov(mov_id):
     mov = Mov.query.get_or_404(mov_id)
     if mov.status == "RETORNADO":
@@ -361,6 +504,7 @@ def retornar_mov(mov_id):
 
 
 @app.route("/api/movs/<mov_id>/docs", methods=["PUT"])
+@require_role(ROLE_ADMIN, ROLE_GESTOR)
 def update_mov_docs(mov_id):
     mov = Mov.query.get_or_404(mov_id)
     payload = request.get_json(force=True)
@@ -382,6 +526,7 @@ def update_mov_docs(mov_id):
 
 
 @app.route("/api/requisitions", methods=["GET"])
+@login_required
 def list_requisitions():
     q = Req.query
     item_id = request.args.get("itemId")
@@ -395,6 +540,7 @@ def list_requisitions():
 
 
 @app.route("/api/requisitions", methods=["POST"])
+@require_role(ROLE_ADMIN, ROLE_GESTOR)
 def create_requisition():
     payload = request.get_json(force=True)
     item_id = payload.get("itemId")
@@ -433,6 +579,7 @@ def create_requisition():
 
 
 @app.route("/api/requisitions/<req_id>/entrega", methods=["POST"])
+@require_role(ROLE_ADMIN, ROLE_GESTOR, ROLE_ALMOXARIFADO)
 def confirmar_entrega(req_id):
     req = Req.query.get_or_404(req_id)
     payload = request.get_json(force=True)
@@ -444,6 +591,7 @@ def confirmar_entrega(req_id):
 
 
 @app.route("/api/requisitions/<req_id>/casco", methods=["POST"])
+@require_role(ROLE_ADMIN, ROLE_GESTOR, ROLE_ALMOXARIFADO)
 def receber_casco(req_id):
     req = Req.query.get_or_404(req_id)
     payload = request.get_json(force=True)
@@ -485,6 +633,7 @@ def receber_casco(req_id):
 
 
 @app.route("/api/requisitions/<req_id>/devolucao", methods=["POST"])
+@require_role(ROLE_ADMIN, ROLE_GESTOR, ROLE_ALMOXARIFADO)
 def devolver_requisition(req_id):
     req = Req.query.get_or_404(req_id)
     if req.status == "DEVOLVIDO":
@@ -511,6 +660,7 @@ def devolver_requisition(req_id):
 
 
 @app.route("/api/requisitions/<req_id>", methods=["DELETE"])
+@require_role(ROLE_ADMIN)
 def cancelar_requisition(req_id):
     req = Req.query.get_or_404(req_id)
     if req.entrega == "ENTREGUE":

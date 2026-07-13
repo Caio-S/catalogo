@@ -21,7 +21,14 @@
       <h1>Gestão de Peças <em>CH570</em></h1>
       <div class="hsub">Colhedora de cana (esteiras) · Motores 6090HNW02 / 6090HNW04 · Edição Sul Americana — PC12797</div>
     </div>
-    <div class="updated">ÚLTIMA CONSULTA AO BANCO<br><b id="updDate">—</b></div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <div class="updated">ÚLTIMA CONSULTA AO BANCO<br><b id="updDate">—</b></div>
+      <div class="userbox">
+        <div class="uname" id="uName">—</div>
+        <div class="urole" id="uRole">—</div>
+        <button class="btn" id="btnLogout" style="margin-top:6px;padding:5px 12px;font-size:11.5px">Sair</button>
+      </div>
+    </div>
   </div>
   <div class="kpis" id="kpis"></div>
 </header>
@@ -32,6 +39,7 @@
   <div class="mod" data-v="movs" style="--m:var(--amber)"><span class="mi">🔧</span><div><div class="ml">Manutenções</div><div class="mc" id="nv-movs">—</div></div></div>
   <div class="mod" data-v="reqs" style="--m:#F07E3C"><span class="mi">🚜</span><div><div class="ml">Requisições</div><div class="mc" id="nv-reqs">—</div></div></div>
   <div class="mod" data-v="rel" style="--m:#9FB6C4"><span class="mi">📊</span><div><div class="ml">Relatórios</div><div class="mc">análises</div></div></div>
+  <div class="mod" data-v="usuarios" id="modUsuarios" style="--m:#B899E8;display:none"><span class="mi">👤</span><div><div class="ml">Usuários</div><div class="mc" id="nv-usuarios">—</div></div></div>
 </nav>
 <div class="hotkeys">
   <span><kbd>1</kbd>–<kbd>5</kbd> trocar módulo</span>
@@ -197,6 +205,27 @@
   <div class="formbtns">
     <button class="btn" data-close="ov7">Cancelar</button>
     <button class="btn primary" id="btnSaveCasco">Registrar confirmação</button>
+  </div>
+</div></div>
+
+<div class="overlay" id="ov8"><div class="ficha form" id="userBox">
+  <div class="fh" style="padding:0"><h2 id="userTitle" style="flex:1">Novo usuário</h2>
+    <button class="fx" data-close="ov8" style="margin:18px 20px 0 0">✕</button></div>
+  <div class="fgrid">
+    <div class="fld full"><label>Nome completo *</label><input id="u_name" maxlength="80"></div>
+    <div class="fld"><label>Usuário (login) *</label><input id="u_username" maxlength="60" autocomplete="off"></div>
+    <div class="fld"><label>Cargo *</label><select id="u_role">
+      <option value="admin">Administrador</option>
+      <option value="gestor">Gestor</option>
+      <option value="almoxarifado">Almoxarifado</option>
+    </select></div>
+    <div class="fld"><label id="u_pwLabel">Senha *</label><input id="u_password" type="password" autocomplete="new-password"></div>
+    <div class="fld"><label>Ativo</label><select id="u_ativo"><option value="1">Sim</option><option value="0">Não</option></select></div>
+  </div>
+  <div class="ferr" id="uerr"></div>
+  <div class="formbtns">
+    <button class="btn" data-close="ov8">Cancelar</button>
+    <button class="btn primary" id="btnUser">Salvar usuário</button>
   </div>
 </div></div>
 

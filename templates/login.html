@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#14181B">
+<title>Login — Gestão de Peças CH570</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<style>
+  body{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+  .loginbox{width:100%;max-width:380px;background:linear-gradient(165deg,rgba(46,56,62,.55),rgba(29,35,39,.75));
+    backdrop-filter:blur(28px) saturate(180%);-webkit-backdrop-filter:blur(28px) saturate(180%);
+    border:1px solid rgba(255,255,255,.14);border-top:1px solid rgba(150,220,130,.55);border-radius:14px;
+    box-shadow:0 25px 60px -12px rgba(0,0,0,.65),inset 0 1px 0 rgba(255,255,255,.08);
+    padding:32px 30px;animation:pop .28s cubic-bezier(.25,.85,.4,1.15)}
+  .loginbox .logo{display:block;max-width:220px;margin:0 auto 22px}
+  .loginbox h1{font-family:var(--disp);font-weight:700;font-size:20px;text-transform:uppercase;text-align:center;letter-spacing:.06em;margin-bottom:4px}
+  .loginbox .sub{color:var(--mut);font-size:12.5px;text-align:center;margin-bottom:24px}
+  .lfld{margin-bottom:14px}
+  .lfld label{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin-bottom:5px}
+  .lfld input{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:6px;color:var(--txt);
+    padding:11px 12px;font-family:var(--body);font-size:14px;outline:none;transition:border .15s}
+  .lfld input:focus{border-color:var(--green)}
+  .lerr{color:var(--red);font-size:12.5px;margin:-4px 0 14px;display:none}
+  .lbtn{width:100%;border:1px solid var(--green);border-radius:6px;padding:12px;font-size:14px;font-weight:700;
+    cursor:pointer;background:var(--green-d);color:#fff;font-family:var(--body);text-transform:uppercase;letter-spacing:.06em;margin-top:6px}
+  .lbtn:hover{background:var(--green)}
+  .lbtn:disabled{opacity:.5;cursor:wait}
+  .lfooter{text-align:center;color:var(--mut);font-size:11px;margin-top:22px;font-family:var(--mono)}
+</style>
+</head>
+<body>
+<div class="loginbox">
+  <img class="logo" src="{{ url_for('static', filename='logo.png') }}" alt="CRV Industrial">
+  <h1>Gestão de Peças <em style="color:var(--green);font-style:normal">CH570</em></h1>
+  <div class="sub">CRV Industrial · Unidade Capinópolis/MG</div>
+  <form id="loginForm" autocomplete="on">
+    <div class="lfld"><label>Usuário</label><input id="username" name="username" autocomplete="username" autofocus></div>
+    <div class="lfld"><label>Senha</label><input id="password" name="password" type="password" autocomplete="current-password"></div>
+    <div class="lerr" id="lerr"></div>
+    <button class="lbtn" id="btnLogin" type="submit">Entrar</button>
+  </form>
+  <div class="lfooter">Catálogo CH570 · CRV Industrial</div>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+$('#loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const err = m => { $('#lerr').textContent = m; $('#lerr').style.display = 'block'; };
+  const username = $('#username').value.trim();
+  const password = $('#password').value;
+  if (!username || !password) return err('Informe usuário e senha.');
+  $('#btnLogin').disabled = true;
+  $('#lerr').style.display = 'none';
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      return err(j.error || 'Falha ao entrar.');
+    }
+    window.location.href = '/';
+  } catch (e2) {
+    err('Falha de conexão: ' + e2.message);
+  } finally {
+    $('#btnLogin').disabled = false;
+  }
+});
+</script>
+</body>
+</html>

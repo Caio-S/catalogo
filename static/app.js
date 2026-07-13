@@ -5,7 +5,13 @@ let DATA = [];
 let AGGS = [];
 let MOVS = [];
 let REQS = [];
+let USERS = [];
 let META = { ts: null };
+let ME = null;
+const can = {
+  create: () => ME && ['admin', 'gestor'].includes(ME.role),
+  delete: () => ME && ME.role === 'admin',
+};
 
 const $ = s => document.querySelector(s);
 const fmt = n => n > 0 ? n : '–';
@@ -32,6 +38,7 @@ async function api(path, opts) {
     headers: { 'Content-Type': 'application/json' },
     ...opts,
   });
+  if (res.status === 401) { window.location.href = '/login'; throw new Error('Sessão expirada.'); }
   if (!res.ok) {
     let msg = 'Erro ' + res.status;
     try { const j = await res.json(); if (j.error) msg = j.error; } catch (_) {}
@@ -141,12 +148,16 @@ function setView(v) {
     aggs: 'Buscar por número de fogo…',
     movs: 'Buscar por fornecedor ou peça…',
     reqs: 'Buscar por frota ou peça…',
+    usuarios: 'Buscar por nome ou usuário…',
   }[v] || '';
   const addLabel = {
     pecas: '＋ Adicionar peça', aggs: '＋ Cadastrar agregado',
     movs: '🔧 Enviar ao fornecedor', reqs: '🚜 Nova requisição',
+    usuarios: '＋ Novo usuário',
   }[v];
-  $('#btnAdd').style.display = addLabel ? '' : 'none';
+  const needsCreatePerm = v !== 'usuarios';
+  const allowed = addLabel && (v === 'usuarios' ? ME?.role === 'admin' : (!needsCreatePerm || can.create()));
+  $('#btnAdd').style.display = allowed ? '' : 'none';
   if (addLabel) $('#btnAdd').textContent = addLabel;
   render();
 }
@@ -239,12 +250,13 @@ function render() {
   if (state.view === 'movs') return renderMovs();
   if (state.view === 'reqs') return renderReqs();
   if (state.view === 'rel') return renderRel();
+  if (state.view === 'usuarios') return renderUsers();
 }
 
 /* =============== ficha da peca =============== */
 document.addEventListener('click', e => {
   const t = e.target.closest('.tag'); if (t && state.view === 'pecas') openFicha(t.dataset.id);
-  const overlayIds = ['ov', 'ov2', 'ov3', 'ov4', 'ov5', 'ov6', 'ov7'];
+  const overlayIds = ['ov', 'ov2', 'ov3', 'ov4', 'ov5', 'ov6', 'ov7', 'ov8'];
   if (overlayIds.includes(e.target.id)) $('#' + e.target.id).classList.remove('open');
   if (e.target.closest('[data-close]')) $('#' + e.target.closest('[data-close]').dataset.close).classList.remove('open');
   const chip = e.target.closest('.aggchip'); if (chip) openAggFicha(chip.dataset.fogo);
@@ -256,8 +268,8 @@ document.addEventListener('keydown', e => {
     if (e.key === 'Escape') document.activeElement.blur();
     return;
   }
-  const anyOpen = ['ov', 'ov2', 'ov3', 'ov4', 'ov5', 'ov6', 'ov7'].some(id => $('#' + id).classList.contains('open'));
-  if (e.key === 'Escape') { ['ov', 'ov2', 'ov3', 'ov4', 'ov5', 'ov6', 'ov7'].forEach(id => $('#' + id).classList.remove('open')); return; }
+  const anyOpen = ['ov', 'ov2', 'ov3', 'ov4', 'ov5', 'ov6', 'ov7', 'ov8'].some(id => $('#' + id).classList.contains('open'));
+  if (e.key === 'Escape') { ['ov', 'ov2', 'ov3', 'ov4', 'ov5', 'ov6', 'ov7', 'ov8'].forEach(id => $('#' + id).classList.remove('open')); return; }
   if (anyOpen) return;
   if (e.key === 'Enter' && document.activeElement.classList?.contains('tag')) return openFicha(document.activeElement.dataset.id);
   if (['1', '2', '3', '4', '5'].includes(e.key)) {
@@ -317,17 +329,17 @@ function openFicha(id) {
       <div>${chips}</div>
       ${movsHist.length ? `<div class="sect">Agregado no fornecedor</div>${movsHist.map(movHtml).join('')}` : ''}
       <div class="factions">
-        <button class="btn danger" id="btnDel">🗑 Excluir</button>
-        <button class="btn amber" id="btnEnviarForn">🔧 Enviar p/ fornecedor</button>
-        <button class="btn" id="btnNovoAgg">🏷️ Cadastrar agregado</button>
-        <button class="btn primary" id="btnEdit">✎ Editar</button>
+        ${can.delete() ? '<button class="btn danger" id="btnDel">🗑 Excluir</button>' : ''}
+        ${can.create() ? '<button class="btn amber" id="btnEnviarForn">🔧 Enviar p/ fornecedor</button>' : ''}
+        ${can.create() ? '<button class="btn" id="btnNovoAgg">🏷️ Cadastrar agregado</button>' : ''}
+        ${can.create() ? '<button class="btn primary" id="btnEdit">✎ Editar</button>' : ''}
       </div>
     </div>`;
   $('#ov').classList.add('open');
-  $('#btnDel').onclick = () => delItem(id);
-  $('#btnEdit').onclick = () => { $('#ov').classList.remove('open'); openForm(id); };
-  $('#btnEnviarForn').onclick = () => { $('#ov').classList.remove('open'); openEnvio(id); };
-  $('#btnNovoAgg').onclick = () => { $('#ov').classList.remove('open'); openAggForm(null, id); };
+  $('#btnDel') && ($('#btnDel').onclick = () => delItem(id));
+  $('#btnEdit') && ($('#btnEdit').onclick = () => { $('#ov').classList.remove('open'); openForm(id); });
+  $('#btnEnviarForn') && ($('#btnEnviarForn').onclick = () => { $('#ov').classList.remove('open'); openEnvio(id); });
+  $('#btnNovoAgg') && ($('#btnNovoAgg').onclick = () => { $('#ov').classList.remove('open'); openAggForm(null, id); });
   $('#ficha [data-retorno]').forEach(btn => btn.onclick = () => registrarRetorno(btn.dataset.retorno));
 }
 async function delItem(id) {
@@ -363,6 +375,7 @@ $('#btnAdd').onclick = () => {
   else if (state.view === 'aggs') openAggForm(null);
   else if (state.view === 'movs') openEnvio(null);
   else if (state.view === 'reqs') openReqForm(null);
+  else if (state.view === 'usuarios') openUserForm(null);
 };
 function openForm(id) {
   editId = id;
@@ -518,14 +531,14 @@ function openAggFicha(fogo) {
       <div class="sect">Linha do tempo</div>
       ${eventos.length ? eventos.map(e => `<div class="mov"><div class="mrow"><div>${esc(e.txt)}</div><div class="mmeta">${br(e.data)}</div></div></div>`).join('') : '<span style="color:var(--mut);font-size:12px">Sem eventos registrados.</span>'}
       <div class="factions">
-        <button class="btn danger" id="btnDelAgg">🗑 Excluir</button>
-        ${['DISPONIVEL_NOVO', 'DISPONIVEL_RECOND'].includes(a.situacao) ? '<button class="btn amber" id="btnReqAgg">🚜 Requisitar</button>' : ''}
-        <button class="btn primary" id="btnEditAgg">✎ Editar</button>
+        ${can.delete() ? '<button class="btn danger" id="btnDelAgg">🗑 Excluir</button>' : ''}
+        ${can.create() && ['DISPONIVEL_NOVO', 'DISPONIVEL_RECOND'].includes(a.situacao) ? '<button class="btn amber" id="btnReqAgg">🚜 Requisitar</button>' : ''}
+        ${can.create() ? '<button class="btn primary" id="btnEditAgg">✎ Editar</button>' : ''}
       </div>
     </div>`;
   $('#ov').classList.add('open');
-  $('#btnDelAgg').onclick = () => { $('#ov').classList.remove('open'); delAgg(a.id); };
-  $('#btnEditAgg').onclick = () => { $('#ov').classList.remove('open'); openAggForm(a.id); };
+  $('#btnDelAgg') && ($('#btnDelAgg').onclick = () => { $('#ov').classList.remove('open'); delAgg(a.id); });
+  $('#btnEditAgg') && ($('#btnEditAgg').onclick = () => { $('#ov').classList.remove('open'); openAggForm(a.id); });
   $('#btnReqAgg') && ($('#btnReqAgg').onclick = () => { $('#ov').classList.remove('open'); openReqForm(a.fogo); });
 }
 function aggCard(a) {
@@ -536,7 +549,7 @@ function aggCard(a) {
       <div class="desc">${esc(itemName(a.itemId))}</div>
     </div></div>
     <div class="cods"><span>${sitChip(a.situacao)}</span>${a.maquina ? `<span>${esc(a.maquina)}</span>` : ''}</div>
-    ${disponivel ? `<div style="padding:0 14px 12px"><button class="btn amber" style="width:100%" data-requisitar="${esc(a.fogo)}">🚜 Requisitar</button></div>` : ''}
+    ${disponivel && can.create() ? `<div style="padding:0 14px 12px"><button class="btn amber" style="width:100%" data-requisitar="${esc(a.fogo)}">🚜 Requisitar</button></div>` : ''}
   </div>`;
 }
 function renderAggs() {
@@ -692,13 +705,13 @@ function openMovDetail(movId) {
       ${m.servicos ? `<div class="sect">Peritagem</div><div style="white-space:pre-line;font-size:13px">${esc(m.servicos)}</div>` : ''}
       ${m.obs ? `<div class="sect">Observação</div><div style="font-size:13px">${esc(m.obs)}</div>` : ''}
       <div class="factions">
-        <button class="btn" id="btnDocsFicha">📄 Docs</button>
+        ${can.create() ? '<button class="btn" id="btnDocsFicha">📄 Docs</button>' : ''}
         <button class="btn" id="btnPeritFicha">🖨 Peritagem</button>
         ${m.status === 'NO_FORNECEDOR' ? '<button class="btn primary" id="btnRetFicha">✔ Registrar retorno</button>' : ''}
       </div>
     </div>`;
   $('#ov').classList.add('open');
-  $('#btnDocsFicha').onclick = () => { $('#ov').classList.remove('open'); openDocs(m.id); };
+  $('#btnDocsFicha') && ($('#btnDocsFicha').onclick = () => { $('#ov').classList.remove('open'); openDocs(m.id); });
   $('#btnPeritFicha').onclick = () => printPeritagem(m.id);
   $('#btnRetFicha') && ($('#btnRetFicha').onclick = () => registrarRetorno(m.id));
 }
@@ -860,7 +873,7 @@ function reqCard(r) {
     ${r.cascoStatus === 'DEVOLVIDO' ? `<div class="mmeta" style="margin-top:6px">Casco entregue por <b>${esc(r.cascoEntreguePor || '–')}</b> · conf. <b>${esc(r.cascoRecebidoPor || '–')}</b> · ${br(r.dataCasco)}</div>` : ''}
     ${r.cascoStatus === 'NAO_DEVOLVIDO' ? `<div class="latebadge" style="display:inline-block;margin-top:6px">🔩 CASCO NÃO DEVOLVIDO</div><div class="mmeta">${br(r.dataCasco)} · ${esc(r.cascoEntreguePor || '–')}${r.cascoObs ? ' · ' + esc(r.cascoObs) : ''}</div>` : ''}
     <div class="factions" style="margin-top:10px">
-      ${r.entrega === 'PENDENTE' ? `<button class="btn" data-entrega="${r.id}">📦 Confirmar entrega</button><button class="btn danger" data-cancelar="${r.id}">Cancelar</button>` : ''}
+      ${r.entrega === 'PENDENTE' ? `<button class="btn" data-entrega="${r.id}">📦 Confirmar entrega</button>${can.delete() ? `<button class="btn danger" data-cancelar="${r.id}">Cancelar</button>` : ''}` : ''}
       ${r.status === 'APLICADO' && r.entrega === 'ENTREGUE' && (!r.cascoStatus || r.cascoStatus === 'PENDENTE' || r.cascoStatus === 'NAO_DEVOLVIDO') ? `<button class="btn amber" data-casco="${r.id}">🔩 Receber casco</button>` : ''}
       ${r.status === 'APLICADO' ? `<button class="btn primary" data-devolver="${r.id}">↩ Devolver</button>` : ''}
     </div>
@@ -981,6 +994,85 @@ function renderRel() {
   $('#btnPrintRel').onclick = () => window.print();
 }
 
+/* =============== modulo: usuarios (admin) =============== */
+function openUserForm(userId) {
+  const u = userId ? USERS.find(x => x.id === userId) : null;
+  $('#userTitle').textContent = u ? 'Editar usuário' : 'Novo usuário';
+  $('#u_name').value = u ? u.name : '';
+  $('#u_username').value = u ? u.username : '';
+  $('#u_username').disabled = !!u;
+  $('#u_role').value = u ? u.role : 'gestor';
+  $('#u_ativo').value = u ? (u.ativo ? '1' : '0') : '1';
+  $('#u_password').value = '';
+  $('#u_pwLabel').textContent = u ? 'Nova senha (deixe em branco p/ manter)' : 'Senha *';
+  $('#uerr').style.display = 'none';
+  $('#btnUser').dataset.id = u ? u.id : '';
+  $('#ov8').classList.add('open');
+}
+$('#btnUser').onclick = async () => {
+  const err = m => { $('#uerr').textContent = m; $('#uerr').style.display = 'block'; };
+  const id = $('#btnUser').dataset.id;
+  const name = $('#u_name').value.trim();
+  const username = $('#u_username').value.trim().toLowerCase();
+  const password = $('#u_password').value;
+  if (!name) return err('Informe o nome completo.');
+  if (!id && !username) return err('Informe o usuário (login).');
+  if (!id && password.length < 4) return err('A senha precisa ter ao menos 4 caracteres.');
+  const payload = { name, role: $('#u_role').value, ativo: $('#u_ativo').value === '1' };
+  if (!id) payload.username = username;
+  if (password) payload.password = password;
+  $('#btnUser').disabled = true;
+  try {
+    let saved;
+    if (id) { saved = await api(`/users/${id}`, { method: 'PUT', body: JSON.stringify(payload) }); Object.assign(USERS.find(u => u.id === id), saved); }
+    else { saved = await api('/users', { method: 'POST', body: JSON.stringify(payload) }); USERS.push(saved); }
+    updateNav(); render();
+    $('#ov8').classList.remove('open');
+    showBanner('ok', `Usuário ${saved.name} salvo.`, '');
+  } catch (e) { return err(e.message); }
+  finally { $('#btnUser').disabled = false; }
+};
+async function deleteUser(userId) {
+  const u = USERS.find(x => x.id === userId); if (!u) return;
+  if (!confirm(`Excluir o usuário ${u.name}?`)) return;
+  try {
+    await api(`/users/${userId}`, { method: 'DELETE' });
+    USERS = USERS.filter(x => x.id !== userId);
+    updateNav(); render();
+    showBanner('ok', `Usuário ${u.name} excluído.`, '');
+  } catch (e) { showBanner('err', 'Falha: ' + e.message, ''); }
+}
+function userCard(u) {
+  return `<div class="mrowcard ${u.ativo ? '' : 'done'}">
+    <div class="mtop">
+      <div class="mpart">${esc(u.name)}${u.id === ME.id ? ' <span style="color:var(--mut);font-size:11px">(você)</span>' : ''}</div>
+      <div class="mforn">${esc(u.roleLabel)}</div>
+    </div>
+    <div class="mdet">
+      <div>Login <b>${esc(u.username)}</b></div>
+      <div>Status <b>${u.ativo ? 'Ativo' : 'Inativo'}</b></div>
+    </div>
+    <div class="factions" style="margin-top:10px">
+      <button class="btn" data-edituser="${u.id}">✎ Editar</button>
+      ${u.id !== ME.id ? `<button class="btn danger" data-deluser="${u.id}">🗑 Excluir</button>` : ''}
+    </div>
+  </div>`;
+}
+let usersLoaded = false;
+function renderUsers() {
+  if (!usersLoaded) {
+    $('#main').innerHTML = '<div class="loading"><span class="spin"></span>Carregando usuários…</div>';
+    api('/users').then(list => { USERS = list; usersLoaded = true; if (state.view === 'usuarios') render(); })
+      .catch(e => { $('#main').innerHTML = `<div class="empty">Falha ao carregar usuários: ${esc(e.message)}</div>`; });
+    return;
+  }
+  let list = state.q ? USERS.filter(u => u.name.toLowerCase().includes(state.q) || u.username.toLowerCase().includes(state.q)) : USERS;
+  $('#cnt').innerHTML = `<b>${list.length}</b> usuários`;
+  $('#main').innerHTML = list.length ? list.map(userCard).join('') : `<div class="empty">Nenhum usuário cadastrado.</div>`;
+  $('#main').querySelectorAll('[data-edituser]').forEach(b => b.onclick = () => openUserForm(b.dataset.edituser));
+  $('#main').querySelectorAll('[data-deluser]').forEach(b => b.onclick = () => deleteUser(b.dataset.deluser));
+}
+
 /* =============== exportar Excel =============== */
 $('#btnExport').onclick = () => {
   const header = ['ITEM', 'CÓD CHB NOVO', 'CÓD CHB RECOND', 'BASE Nº DE FOGO', 'DESCRIÇÃO GENÉRICA',
@@ -1037,10 +1129,21 @@ document.addEventListener('mouseleave', e => {
   if (tiltCard) { tiltCard.style.transform = ''; tiltCard = null; }
 }, true);
 
+/* =============== usuario logado =============== */
+$('#btnLogout').onclick = async () => {
+  try { await api('/logout', { method: 'POST' }); } catch (_) {}
+  window.location.href = '/login';
+};
+
 /* =============== boot =============== */
 (async () => {
   refreshKpis();
   try {
+    ME = await api('/me');
+    $('#uName').textContent = ME.name;
+    $('#uRole').textContent = ME.roleLabel;
+    if (ME.role === 'admin') $('#modUsuarios').style.display = '';
+
     await loadAll();
     refreshKpis(); updateNav(); render();
     if (META.mariadbTs) {

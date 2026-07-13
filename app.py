@@ -539,6 +539,38 @@ def list_requisitions():
     return jsonify([r.to_dict() for r in reqs])
 
 
+@app.route("/api/lookup/funcionario/<matricula>")
+@login_required
+def lookup_funcionario(matricula):
+    if not os.environ.get("MARIADB_HOST"):
+        return jsonify({"error": "Consulta ao banco da empresa não configurada."}), 503
+    if not matricula.isdigit():
+        return jsonify({"error": "Matrícula inválida."}), 400
+    try:
+        result = sync_mariadb.fetch_funcionario(int(matricula))
+    except Exception as exc:
+        return jsonify({"error": f"Falha ao consultar: {exc}"}), 502
+    if not result:
+        return jsonify({"error": "Matrícula não encontrada (ou funcionário inativo)."}), 404
+    return jsonify(result)
+
+
+@app.route("/api/lookup/frota/<cod>")
+@login_required
+def lookup_frota(cod):
+    if not os.environ.get("MARIADB_HOST"):
+        return jsonify({"error": "Consulta ao banco da empresa não configurada."}), 503
+    if not cod.isdigit():
+        return jsonify({"error": "Código de frota inválido."}), 400
+    try:
+        result = sync_mariadb.fetch_frota(int(cod))
+    except Exception as exc:
+        return jsonify({"error": f"Falha ao consultar: {exc}"}), 502
+    if not result:
+        return jsonify({"error": "Código de frota não encontrado."}), 404
+    return jsonify(result)
+
+
 @app.route("/api/requisitions", methods=["POST"])
 @require_role(ROLE_ADMIN, ROLE_GESTOR)
 def create_requisition():

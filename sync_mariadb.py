@@ -9,8 +9,8 @@ from models import Item, Meta, db
 ALMOX_PREFIXES = ("1 [", "201 [", "996 [")
 
 
-def fetch_saldos():
-    conn = pymysql.connect(
+def _conn():
+    return pymysql.connect(
         host=os.environ["MARIADB_HOST"],
         port=int(os.environ.get("MARIADB_PORT", 3306)),
         user=os.environ["MARIADB_USER"],
@@ -20,6 +20,50 @@ def fetch_saldos():
         charset="utf8mb4",
         cursorclass=pymysql.cursors.DictCursor,
     )
+
+
+def fetch_funcionario(matricula):
+    """Busca nome do funcionario ativo pela matricula, em vw_funcionarios_ativos_atual."""
+    conn = _conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT matricula, nome
+                FROM vw_funcionarios_ativos_atual
+                WHERE matricula = %s AND ativo = 1
+                LIMIT 1
+                """,
+                (matricula,),
+            )
+            row = cur.fetchone()
+            return {"matricula": row["matricula"], "nome": row["nome"].strip()} if row else None
+    finally:
+        conn.close()
+
+
+def fetch_frota(cod_frota):
+    """Busca descricao da frota pelo CodFrota, em vw_bi_fluxo_dFrota."""
+    conn = _conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT CodFrota, descricao_frota
+                FROM vw_bi_fluxo_dFrota
+                WHERE CodFrota = %s
+                LIMIT 1
+                """,
+                (cod_frota,),
+            )
+            row = cur.fetchone()
+            return {"codFrota": row["CodFrota"], "descricao": row["descricao_frota"].strip()} if row else None
+    finally:
+        conn.close()
+
+
+def fetch_saldos():
+    conn = _conn()
     try:
         with conn.cursor() as cur:
             where_almox = " OR ".join(
@@ -48,16 +92,7 @@ def fetch_saldo_por_codigos(codigos):
     if not codigos:
         return {}
 
-    conn = pymysql.connect(
-        host=os.environ["MARIADB_HOST"],
-        port=int(os.environ.get("MARIADB_PORT", 3306)),
-        user=os.environ["MARIADB_USER"],
-        password=os.environ["MARIADB_PASS"],
-        database=os.environ["MARIADB_DB"],
-        connect_timeout=15,
-        charset="utf8mb4",
-        cursorclass=pymysql.cursors.DictCursor,
-    )
+    conn = _conn()
     try:
         with conn.cursor() as cur:
             where_almox = " OR ".join(

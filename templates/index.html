@@ -160,8 +160,15 @@
     <button class="fx" data-close="ov5" style="margin:18px 20px 0 0">✕</button></div>
   <div class="fgrid">
     <div class="fld full"><label>Agregado *</label><select id="q_agg"></select></div>
-    <div class="fld"><label>Frota/equipamento *</label><input id="q_frota"></div>
-    <div class="fld"><label>Solicitante</label><input id="q_solic"></div>
+    <div class="fld"><label>Código da frota</label><input id="q_frotacod" inputmode="numeric" placeholder="nº no sistema"></div>
+    <div class="fld"><label>Frota/equipamento *</label><input id="q_frota" placeholder="preenchido automaticamente"></div>
+    <div class="fld"><label>Matrícula do funcionário</label><input id="q_matricula" inputmode="numeric" placeholder="nº no sistema"></div>
+    <div class="fld"><label>Solicitante</label><input id="q_solic" placeholder="preenchido automaticamente"></div>
+    <div class="fld full">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;font-size:13px;color:var(--txt)">
+        <input type="checkbox" id="q_temcasco" style="width:auto"> Envolve devolução de casco (peça antiga)?
+      </label>
+    </div>
     <div class="fld full"><label>Observação</label><textarea id="q_obs" rows="2"></textarea></div>
   </div>
   <div class="ferr" id="qerr"></div>

@@ -781,21 +781,41 @@ function fillAggSelect(sel) {
 function openReqForm(prefillFogo) {
   fillAggSelect($('#q_agg'));
   if (prefillFogo) $('#q_agg').value = prefillFogo;
-  $('#q_frota').value = ''; $('#q_solic').value = ''; $('#q_obs').value = '';
+  $('#q_frotacod').value = ''; $('#q_frota').value = '';
+  $('#q_matricula').value = ''; $('#q_solic').value = '';
+  $('#q_temcasco').checked = false;
+  $('#q_obs').value = '';
   $('#qerr').style.display = 'none';
   $('#ov5').classList.add('open');
 }
+async function lookupInto(codeInputSel, targetInputSel, path, resultKey, notFoundMsg) {
+  const code = $(codeInputSel).value.trim();
+  if (!code) return;
+  try {
+    const r = await api(`${path}/${encodeURIComponent(code)}`);
+    $(targetInputSel).value = r[resultKey];
+  } catch (e) {
+    showBanner('err', notFoundMsg + ': ' + e.message, '');
+  }
+}
+$('#q_frotacod').addEventListener('blur', () => lookupInto('#q_frotacod', '#q_frota', '/lookup/frota', 'descricao', 'Frota não encontrada'));
+$('#q_matricula').addEventListener('blur', () => lookupInto('#q_matricula', '#q_solic', '/lookup/funcionario', 'nome', 'Matrícula não encontrada'));
 $('#btnReq').onclick = async () => {
   const err = m => { $('#qerr').textContent = m; $('#qerr').style.display = 'block'; };
   const fogo = $('#q_agg').value;
   const frota = $('#q_frota').value.trim();
+  const solicitante = $('#q_solic').value.trim();
   if (!fogo) return err('Selecione um agregado disponível.');
   if (!frota) return err('Informe a frota/equipamento.');
+  const temCasco = $('#q_temcasco').checked;
+  if (temCasco && !solicitante) return err('Informe o funcionário responsável pelo casco.');
   const agg = aggByFogo(fogo);
   const payload = {
     itemId: agg.itemId, fogoAgg: fogo, frota,
-    solicitante: $('#q_solic').value.trim(), obs: $('#q_obs').value.trim(),
+    solicitante, obs: $('#q_obs').value.trim(),
     dataReq: todayISO(), registradoPor: ensureOperator(),
+    cascoStatus: temCasco ? 'PENDENTE' : null,
+    cascoFunc: temCasco ? solicitante : null,
   };
   $('#btnReq').disabled = true;
   try {

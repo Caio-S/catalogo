@@ -154,8 +154,11 @@ function updateNav() {
   const atrasados = MOVS.filter(atrasado).length;
   $('#nv-movs').textContent = noForn + ' no fornecedor' + (atrasados ? ` · ${atrasados} atrasado(s)` : '');
   const aplicadas = REQS.filter(r => r.status === 'APLICADO').length;
+  $('#nv-reqs').textContent = aplicadas + ' na frota';
   const cascos = REQS.filter(cascoPendente).length;
-  $('#nv-reqs').textContent = aplicadas + ' na frota' + (cascos ? ` · ${cascos} casco(s) pend.` : '');
+  const entregasPend = REQS.filter(r => r.status === 'APLICADO' && r.entrega === 'PENDENTE').length;
+  const almEl = $('#nv-alm');
+  if (almEl) almEl.textContent = (entregasPend || cascos) ? `${entregasPend} entrega(s) · ${cascos} casco(s)` : 'em dia ✔';
 }
 
 function setView(v) {
@@ -173,6 +176,7 @@ function setView(v) {
     aggs: 'Buscar por número de fogo…',
     movs: 'Buscar por fornecedor ou peça…',
     reqs: 'Buscar por frota ou peça…',
+    alm: 'Buscar frota, nº de fogo, funcionário…',
     usuarios: 'Buscar por nome ou usuário…',
   }[v] || '';
   const addLabel = {
@@ -185,7 +189,7 @@ function setView(v) {
   $('#btnAdd').style.display = allowed ? '' : 'none';
   if (addLabel) $('#btnAdd').textContent = addLabel;
   render();
-  if (v === 'rel' || v === 'reqs') refreshData(true);
+  if (v === 'rel' || v === 'reqs' || v === 'alm') refreshData(true);
 }
 document.querySelectorAll('.mod').forEach(m => m.onclick = () => setView(m.dataset.v));
 
@@ -275,6 +279,7 @@ function render() {
   if (state.view === 'aggs') return renderAggs();
   if (state.view === 'movs') return renderMovs();
   if (state.view === 'reqs') return renderReqs();
+  if (state.view === 'alm') return renderAlm();
   if (state.view === 'rel') return renderRel();
   if (state.view === 'usuarios') return renderUsers();
 }
@@ -298,8 +303,8 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { ['ov', 'ov2', 'ov3', 'ov4', 'ov5', 'ov6', 'ov7', 'ov8'].forEach(id => $('#' + id).classList.remove('open')); return; }
   if (anyOpen) return;
   if (e.key === 'Enter' && document.activeElement.classList?.contains('tag')) return openFicha(document.activeElement.dataset.id);
-  if (['1', '2', '3', '4', '5'].includes(e.key)) {
-    setView(['pecas', 'aggs', 'movs', 'reqs', 'rel'][+e.key - 1]);
+  if (['1', '2', '3', '4', '5', '6'].includes(e.key)) {
+    setView(['pecas', 'aggs', 'movs', 'reqs', 'alm', 'rel'][+e.key - 1]);
   } else if (e.key === '/') { e.preventDefault(); $('#q').focus(); }
   else if (e.key.toLowerCase() === 'n') { $('#btnAdd').click(); }
   else if (e.key.toLowerCase() === 'p' && state.view === 'rel') { window.print(); }
@@ -845,6 +850,13 @@ function syncCascoEntregue() {
   if (naoEntregue) $('#c_fogo').value = '';
 }
 $('#c_entregue').addEventListener('change', syncCascoEntregue);
+function fillCascoFogoOptions(r) {
+  const cand = aggsOf(r.itemId).filter(g => g.fogo !== r.fogoAgg && !['NO_FORNECEDOR', 'P_CONSERTO', 'BAIXADO'].includes(g.situacao));
+  $('#c_fogo').innerHTML =
+    '<option value="">— casco sem cadastro (lança só no saldo P/ Conserto) —</option>' +
+    cand.map(g => `<option value="${esc(g.fogo)}">${esc(g.fogo)} · ${esc(SIT_LABEL[g.situacao] || g.situacao)}${g.maquina ? ' · ' + esc(g.maquina) : ''}</option>`).join('') +
+    '<option value="__novo__">＋ Cadastrar novo nº de fogo para este casco…</option>';
+}
 function receberCasco(reqId) {
   const r = REQS.find(x => x.id === reqId); if (!r) return;
   cascoReqId = reqId;
@@ -852,7 +864,7 @@ function receberCasco(reqId) {
   $('#c_entregue').value = 'S';
   $('#c_data').value = todayISO();
   $('#c_quem').value = r.cascoFunc || '';
-  $('#c_fogo').value = '';
+  fillCascoFogoOptions(r);
   $('#c_obs').value = '';
   syncCascoEntregue();
   $('#cerr').style.display = 'none';
@@ -864,22 +876,38 @@ $('#btnSaveCasco').onclick = async () => {
   const data = $('#c_data').value;
   if (!quem) return err('Informe quem entregou o casco.');
   if (!data) return err('Informe a data.');
-  const payload = {
-    entregue: $('#c_entregue').value,
-    data, quem,
-    cascoFogo: $('#c_fogo').value.trim(),
-    obs: $('#c_obs').value.trim(),
-    cascoRecebidoPor: ensureOperator(),
-  };
+  const r = REQS.find(x => x.id === cascoReqId);
+  const entregue = $('#c_entregue').value;
+  let cascoFogo = $('#c_fogo').value;
+
+  if (entregue === 'S' && cascoFogo === '__novo__') {
+    const novo = (prompt('Nº de fogo do casco recebido (novo cadastro):', '') || '').trim().toUpperCase();
+    if (!novo) return err('Informe o nº de fogo do casco.');
+    if (aggByFogo(novo)) return err(`Nº de fogo ${novo} já está cadastrado — selecione-o na lista.`);
+    try {
+      const novaAgg = await api('/aggregates', {
+        method: 'POST',
+        body: JSON.stringify({ fogo: novo, itemId: r.itemId, situacao: 'APLICADO', maquina: r.frota, obs: 'Casco recebido da frota ' + r.frota }),
+      });
+      AGGS.push(novaAgg);
+      cascoFogo = novo;
+    } catch (e) { return err(e.message); }
+  }
+  if (entregue === 'N') cascoFogo = '';
+
+  const payload = { entregue, data, quem, cascoFogo, obs: $('#c_obs').value.trim(), cascoRecebidoPor: ensureOperator() };
   $('#btnSaveCasco').disabled = true;
   try {
     const saved = await api(`/requisitions/${cascoReqId}/casco`, { method: 'POST', body: JSON.stringify(payload) });
-    Object.assign(REQS.find(r => r.id === cascoReqId), saved);
+    Object.assign(REQS.find(x => x.id === cascoReqId), saved);
     const fresh = await api('/items'); DATA = fresh.items;
     const freshAggs = await api('/aggregates'); AGGS = freshAggs;
     refreshKpis(); updateNav(); render();
     $('#ov7').classList.remove('open');
-    showBanner('ok', payload.entregue === 'S' ? 'Casco recebido.' : 'Registrado: casco ainda não devolvido.', '');
+    showBanner(entregue === 'S' ? 'ok' : 'err',
+      entregue === 'S'
+        ? `Casco recebido${cascoFogo ? ` · agregado ${cascoFogo} liberado para manutenção (P/ Conserto)` : ' → saldo P/ Conserto'}.`
+        : `Registrado: casco NÃO devolvido (responsável: ${quem}).`, '');
   } catch (e) { return err(e.message); }
   finally { $('#btnSaveCasco').disabled = false; }
 };
@@ -937,15 +965,39 @@ function reqCard(r) {
     </div>
   </div>`;
 }
+function wireReqCardButtons() {
+  $('#main').querySelectorAll('[data-entrega]').forEach(b => b.onclick = () => confirmarEntrega(b.dataset.entrega));
+  $('#main').querySelectorAll('[data-casco]').forEach(b => b.onclick = () => receberCasco(b.dataset.casco));
+  $('#main').querySelectorAll('[data-devolver]').forEach(b => b.onclick = () => devolverReq(b.dataset.devolver));
+  $('#main').querySelectorAll('[data-excluirreq]').forEach(b => b.onclick = () => excluirReq(b.dataset.excluirreq));
+}
 function renderReqs() {
   let list = state.q ? REQS.filter(r => r.frota.toLowerCase().includes(state.q) || itemName(r.itemId).toLowerCase().includes(state.q)) : REQS;
   list = [...list].sort((a, b) => (b.dataReq || '').localeCompare(a.dataReq || ''));
   $('#cnt').innerHTML = `<b>${list.length}</b> requisições`;
   $('#main').innerHTML = list.length ? list.map(reqCard).join('') : `<div class="empty">Nenhuma requisição registrada.</div>`;
-  $('#main').querySelectorAll('[data-entrega]').forEach(b => b.onclick = () => confirmarEntrega(b.dataset.entrega));
-  $('#main').querySelectorAll('[data-casco]').forEach(b => b.onclick = () => receberCasco(b.dataset.casco));
-  $('#main').querySelectorAll('[data-devolver]').forEach(b => b.onclick = () => devolverReq(b.dataset.devolver));
-  $('#main').querySelectorAll('[data-excluirreq]').forEach(b => b.onclick = () => excluirReq(b.dataset.excluirreq));
+  wireReqCardButtons();
+}
+function renderAlm() {
+  const matchQ = r => {
+    if (!state.q) return true;
+    const hay = `${r.fogoAgg || ''} ${r.frota} ${r.solicitante || ''} ${r.cascoFunc || ''} ${r.cascoEntreguePor || ''} ${itemName(r.itemId)}`.toLowerCase();
+    return hay.includes(state.q);
+  };
+  const entregas = REQS.filter(r => r.status === 'APLICADO' && r.entrega === 'PENDENTE').filter(matchQ)
+    .sort((a, b) => diasAplicado(b) - diasAplicado(a));
+  const cascos = REQS.filter(r => cascoPendente(r)).filter(matchQ)
+    .sort((a, b) => (a.cascoStatus === 'NAO_DEVOLVIDO' ? 0 : 1) - (b.cascoStatus === 'NAO_DEVOLVIDO' ? 0 : 1) || diasAplicado(b) - diasAplicado(a));
+  $('#cnt').innerHTML = `<b>${entregas.length + cascos.length}</b> pendência(s)`;
+  $('#main').innerHTML =
+    `<div class="catlab" style="color:#2E9B7A">Fila do almoxarifado — pendências para dar baixa</div>` +
+    `<div class="catlab" style="font-size:14px;color:var(--blue)">📦 Entregas a confirmar · ${entregas.length}</div>` +
+    (entregas.length ? entregas.map(reqCard).join('')
+      : '<div class="empty" style="padding:20px">Nenhuma requisição aguardando entrega.</div>') +
+    `<div class="catlab" style="font-size:14px;color:var(--red)">🔩 Cascos a receber · ${cascos.length}</div>` +
+    (cascos.length ? cascos.map(reqCard).join('')
+      : '<div class="empty" style="padding:20px">Nenhum casco pendente de recebimento.</div>');
+  wireReqCardButtons();
 }
 
 /* =============== modulo: relatorios =============== */

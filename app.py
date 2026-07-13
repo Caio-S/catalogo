@@ -642,23 +642,30 @@ def receber_casco(req_id):
 
     req.casco_status = "DEVOLVIDO"
     novo_fogo = (payload.get("cascoFogo") or "").strip().upper()
+    req.casco_fogo = novo_fogo or None
+
     if novo_fogo:
-        req.casco_fogo = novo_fogo
-
-    item = db.session.get(Item, req.item_id)
-    if item:
-        bump(item, "pc", 1)  # casco devolvido entra na fila de conserto
-
-    if novo_fogo and not Aggregate.query.filter_by(fogo=novo_fogo).first():
-        db.session.add(
-            Aggregate(
-                id=new_id("g"),
-                fogo=novo_fogo,
-                item_id=req.item_id,
-                situacao=SIT_P_CONSERTO,
-                obs="Casco devolvido na requisição " + req.id,
+        # ha agregado vinculado: so transiciona a situacao dele pra P/ Conserto
+        # (o saldo pc NAO e somado aqui pra nao contar em duplicidade com o agregado)
+        agg = Aggregate.query.filter_by(fogo=novo_fogo).first()
+        if agg:
+            agg.situacao = SIT_P_CONSERTO
+            agg.maquina = None
+        else:
+            db.session.add(
+                Aggregate(
+                    id=new_id("g"),
+                    fogo=novo_fogo,
+                    item_id=req.item_id,
+                    situacao=SIT_P_CONSERTO,
+                    obs="Casco devolvido na requisição " + req.id,
+                )
             )
-        )
+    else:
+        # casco sem cadastro: nao ha agregado pra rastrear, entao soma direto no saldo
+        item = db.session.get(Item, req.item_id)
+        if item:
+            bump(item, "pc", 1)
 
     db.session.commit()
     return jsonify(req.to_dict())

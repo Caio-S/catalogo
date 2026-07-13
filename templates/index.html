@@ -38,11 +38,12 @@
   <div class="mod" data-v="aggs" style="--m:var(--blue)"><span class="mi">🏷️</span><div><div class="ml">Agregados</div><div class="mc" id="nv-aggs">—</div></div></div>
   <div class="mod" data-v="movs" style="--m:var(--amber)"><span class="mi">🔧</span><div><div class="ml">Manutenções</div><div class="mc" id="nv-movs">—</div></div></div>
   <div class="mod" data-v="reqs" style="--m:#F07E3C"><span class="mi">🚜</span><div><div class="ml">Requisições</div><div class="mc" id="nv-reqs">—</div></div></div>
+  <div class="mod" data-v="alm" style="--m:#2E9B7A"><span class="mi">🏬</span><div><div class="ml">Almoxarifado</div><div class="mc" id="nv-alm">—</div></div></div>
   <div class="mod" data-v="rel" style="--m:#9FB6C4"><span class="mi">📊</span><div><div class="ml">Relatórios</div><div class="mc">análises</div></div></div>
   <div class="mod" data-v="usuarios" id="modUsuarios" style="--m:#B899E8;display:none"><span class="mi">👤</span><div><div class="ml">Usuários</div><div class="mc" id="nv-usuarios">—</div></div></div>
 </nav>
 <div class="hotkeys">
-  <span><kbd>1</kbd>–<kbd>5</kbd> trocar módulo</span>
+  <span><kbd>1</kbd>–<kbd>6</kbd> trocar módulo</span>
   <span><kbd>/</kbd> buscar</span>
   <span><kbd>N</kbd> novo registro</span>
   <span><kbd>P</kbd> imprimir relatório</span>
@@ -206,7 +207,7 @@
     </select></div>
     <div class="fld"><label>Data *</label><input id="c_data" type="date"></div>
     <div class="fld"><label>Entregue por *</label><input id="c_quem" maxlength="50"></div>
-    <div class="fld"><label>Nº de fogo do casco</label><input id="c_fogo" maxlength="20" style="text-transform:uppercase"></div>
+    <div class="fld full"><label>Qual agregado foi devolvido (casco)? *</label><select id="c_fogo"></select></div>
     <div class="fld full"><label>Observação</label><input id="c_obs" maxlength="80"></div>
   </div>
   <div class="ferr" id="cerr"></div>

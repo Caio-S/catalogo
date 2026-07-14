@@ -18,6 +18,8 @@ from models import (
     SIT_DISPONIVEL_RECOND,
     SIT_NO_FORNECEDOR,
     SIT_P_CONSERTO,
+    SIT_PENDENTE_DEVOLUCAO,
+    SIT_RESERVADO,
     Aggregate,
     Item,
     Meta,
@@ -46,8 +48,26 @@ app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=14)
 
 db.init_app(app)
 
+def ensure_schema():
+    """Migração leve: adiciona colunas novas em bancos já criados (funciona em SQLite e Postgres)."""
+    from sqlalchemy import inspect, text
+
+    insp = inspect(db.engine)
+    wanted = {
+        "movs": [("solicitacao_orc", "VARCHAR(60)")],
+        "reqs": [("origem_sit", "VARCHAR(20)")],
+    }
+    with db.engine.begin() as conn:
+        for table, cols in wanted.items():
+            existing = {c["name"] for c in insp.get_columns(table)}
+            for name, ddl in cols:
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+
+
 with app.app_context():
     db.create_all()
+    ensure_schema()
 
 import sync_mariadb  # noqa: E402 (precisa que `app` já exista, ver import circular em sync_mariadb.py)
 
@@ -349,26 +369,55 @@ def list_aggregates():
     return jsonify([a.to_dict() for a in aggs])
 
 
+# Regra 1 — no cadastro só se admite: Novo, Em uso em equipamento ou P/ Conserto.
+# (RECONDICIONADO nasce apenas de retorno de conserto; RESERVADO/PENDENTE_DEVOLUCAO, do fluxo de requisição.)
+CADASTRO_SITUACOES = {SIT_DISPONIVEL_NOVO, SIT_APLICADO, SIT_P_CONSERTO}
+
+
 @app.route("/api/aggregates", methods=["POST"])
 @require_role(ROLE_ADMIN, ROLE_GESTOR)
 def create_aggregate():
     payload = request.get_json(force=True)
-    fogo = str(payload.get("fogo", "")).strip().upper()
     item_id = payload.get("itemId")
-    if not fogo or not item_id:
-        return jsonify({"error": "Número de fogo e peça são obrigatórios."}), 400
-    if not db.session.get(Item, item_id):
+    if not item_id:
+        return jsonify({"error": "Peça é obrigatória."}), 400
+    item = db.session.get(Item, item_id)
+    if not item:
         return jsonify({"error": "Peça não encontrada."}), 404
+
+    # Regra 1 — prefixo automático a partir da base de fogo da peça: o usuário informa só a sequência
+    prefixo = (item.fogo or "").strip().upper()
+    fogo_num = str(payload.get("fogoNum") or "").strip()
+    fogo = str(payload.get("fogo", "")).strip().upper()
+    if fogo_num:
+        if not fogo_num.isdigit():
+            return jsonify({"error": "Informe apenas a sequência numérica do nº de fogo (ex.: 1, 2, 15)."}), 400
+        fogo = (prefixo + "-" if prefixo else "") + fogo_num.zfill(3)
+    if not fogo:
+        return jsonify({"error": "Número de fogo é obrigatório."}), 400
+    if prefixo and not fogo.startswith(prefixo + "-"):
+        return jsonify({"error": f"O nº de fogo desta peça usa o prefixo automático {prefixo}- (ex.: {prefixo}-001). Informe apenas a sequência numérica."}), 400
     if Aggregate.query.filter_by(fogo=fogo).first():
         return jsonify({"error": f"Já existe um agregado com o fogo {fogo}."}), 409
+
+    situacao = payload.get("situacao") or SIT_DISPONIVEL_NOVO
+    if situacao not in CADASTRO_SITUACOES:
+        return jsonify({"error": "No cadastro, a situação deve ser Novo, Em uso em equipamento ou P/ Conserto."}), 400
+
+    # Regra 2 — com equipamento: informar a máquina é obrigatório e o agregado nasce Em Uso vinculado
+    maquina = (payload.get("maquina") or "").strip()
+    if situacao == SIT_APLICADO and not maquina:
+        return jsonify({"error": "Informe a qual equipamento o agregado pertence (situação Em uso)."}), 400
+    if situacao != SIT_APLICADO:
+        maquina = ""
 
     agg = Aggregate(
         id=new_id("g"),
         fogo=fogo,
         item_id=item_id,
-        situacao=payload.get("situacao") or SIT_DISPONIVEL_NOVO,
+        situacao=situacao,
         serie=(payload.get("serie") or "").strip(),
-        maquina=(payload.get("maquina") or "").strip(),
+        maquina=maquina,
         obs=(payload.get("obs") or "").strip(),
     )
     db.session.add(agg)
@@ -453,8 +502,13 @@ def create_mov():
     fogo_agg = (payload.get("fogoAgg") or "").strip().upper() or None
     origem = payload.get("origem") if payload.get("origem") in ("pc", "nenhum") else "nenhum"
 
-    if origem == "pc" and qtd > (item.pc or 0):
-        return jsonify({"error": f"Não é possível enviar {qtd} un a partir de 'P/ Conserto': só há {item.pc or 0} nessa situação."}), 409
+    agg = None
+    if fogo_agg:
+        agg = Aggregate.query.filter_by(fogo=fogo_agg).first()
+        if not agg:
+            return jsonify({"error": f"Agregado {fogo_agg} não encontrado."}), 404
+        if agg.situacao not in (SIT_P_CONSERTO, SIT_DISPONIVEL_NOVO, SIT_DISPONIVEL_RECOND):
+            return jsonify({"error": f"O agregado {fogo_agg} não está enviável para conserto (situação atual: {agg.situacao})."}), 409
 
     mov = Mov(
         id=new_id("m"),
@@ -465,6 +519,7 @@ def create_mov():
         origem=origem,
         data_envio=parse_date(payload.get("dataEnvio")) or date.today(),
         previsao_retorno=parse_date(payload.get("previsaoRetorno")),
+        solicitacao_orc=(payload.get("solicitacaoOrc") or "").strip(),
         nf_remessa=(payload.get("nfRemessa") or "").strip(),
         orcamento=(payload.get("orcamento") or "").strip(),
         pedido_compra=(payload.get("pedidoCompra") or "").strip(),
@@ -475,12 +530,12 @@ def create_mov():
     )
     db.session.add(mov)
 
-    if fogo_agg:
-        agg = Aggregate.query.filter_by(fogo=fogo_agg).first()
-        if agg:
-            agg.situacao = SIT_NO_FORNECEDOR
+    if agg:
+        # Regra 4 — durante o conserto o agregado fica identificado como "em processo de conserto"
+        agg.situacao = SIT_NO_FORNECEDOR
 
-    if origem == "pc":
+    # saldo pc só é movimentado quando NÃO há agregado rastreado (evita dupla contagem)
+    if origem == "pc" and not agg:
         bump(item, "pc", -qtd)
     bump(item, "em", qtd)
 
@@ -520,6 +575,7 @@ def update_mov_docs(mov_id):
     mov = Mov.query.get_or_404(mov_id)
     payload = request.get_json(force=True)
     for campo, chave in (
+        ("solicitacao_orc", "solicitacaoOrc"),
         ("nf_remessa", "nfRemessa"),
         ("orcamento", "orcamento"),
         ("pedido_compra", "pedidoCompra"),
@@ -531,17 +587,6 @@ def update_mov_docs(mov_id):
             setattr(mov, campo, (payload.get(chave) or "").strip())
     db.session.commit()
     return jsonify(mov.to_dict())
-
-
-@app.route("/api/movs/<mov_id>", methods=["DELETE"])
-@require_role(ROLE_ADMIN)
-def delete_mov(mov_id):
-    mov = Mov.query.get_or_404(mov_id)
-    if mov.status != "RETORNADO":
-        return jsonify({"error": "Só é possível excluir envios já retornados. Registre o retorno antes de excluir."}), 409
-    db.session.delete(mov)
-    db.session.commit()
-    return "", 204
 
 
 # =============== requisicoes (aplicacao de agregado na frota) ===============
@@ -605,14 +650,30 @@ def create_requisition():
         return jsonify({"error": "Peça não encontrada."}), 404
 
     fogo_agg = (payload.get("fogoAgg") or "").strip().upper() or None
+    substituir = (payload.get("substituirFogo") or "").strip().upper() or None
 
-    agg = None
-    if fogo_agg:
-        agg = Aggregate.query.filter_by(fogo=fogo_agg).first()
-        if not agg:
-            return jsonify({"error": f"Agregado {fogo_agg} não encontrado."}), 404
-        if agg.situacao not in (SIT_DISPONIVEL_NOVO, SIT_DISPONIVEL_RECOND):
-            return jsonify({"error": f"O agregado {fogo_agg} não está disponível para requisição (já está em uso). Atualize a página e verifique a situação dele."}), 409
+    agg = Aggregate.query.filter_by(fogo=fogo_agg).first() if fogo_agg else None
+    if fogo_agg and not agg:
+        return jsonify({"error": f"Agregado {fogo_agg} não encontrado."}), 404
+    if agg and agg.situacao not in (SIT_DISPONIVEL_NOVO, SIT_DISPONIVEL_RECOND):
+        return jsonify({"error": f"O agregado {fogo_agg} não está disponível para requisição (situação atual: {agg.situacao})."}), 409
+
+    # Regra 3 — a requisição aponta QUAL agregado em uso será substituído no equipamento
+    casco_status = None
+    casco_fogo = None
+    if substituir:
+        agg_sub = Aggregate.query.filter_by(fogo=substituir).first()
+        if not agg_sub:
+            return jsonify({"error": f"Agregado a substituir {substituir} não encontrado."}), 404
+        if agg_sub.situacao != SIT_APLICADO:
+            return jsonify({"error": f"O agregado {substituir} não está em uso em equipamento (situação atual: {agg_sub.situacao})."}), 409
+        maq_sub = (agg_sub.maquina or "").strip().upper()
+        if maq_sub and maq_sub != frota.strip().upper():
+            return jsonify({"error": f"O agregado {substituir} está em uso na frota {agg_sub.maquina}, não em {frota}."}), 409
+        casco_status = "PENDENTE"
+        casco_fogo = substituir
+    elif payload.get("cascoStatus") == "PENDENTE":
+        casco_status = "PENDENTE"  # casco antigo sem cadastro de nº de fogo
 
     req = Req(
         id=new_id("r"),
@@ -625,14 +686,18 @@ def create_requisition():
         status="APLICADO",
         registrado_por=(payload.get("registradoPor") or "").strip(),
         entrega="PENDENTE",
-        casco_status=payload.get("cascoStatus") or None,
+        casco_status=casco_status,
         casco_func=(payload.get("cascoFunc") or "").strip() or None,
+        casco_fogo=casco_fogo,
+        origem_sit=agg.situacao if agg else None,
     )
     db.session.add(req)
 
     if agg:
-        agg.situacao = SIT_APLICADO
-        agg.maquina = frota
+        # Regra 3 — o novo só passa a Em Uso após o almoxarifado confirmar a entrega;
+        # até lá fica separado/reservado para esta requisição
+        agg.situacao = SIT_RESERVADO
+        agg.maquina = None
 
     db.session.commit()
     return jsonify(req.to_dict()), 201
@@ -642,10 +707,26 @@ def create_requisition():
 @require_role(ROLE_ADMIN, ROLE_GESTOR, ROLE_ALMOXARIFADO)
 def confirmar_entrega(req_id):
     req = Req.query.get_or_404(req_id)
+    if req.entrega == "ENTREGUE":
+        return jsonify({"error": "A entrega desta requisição já foi confirmada."}), 409
     payload = request.get_json(force=True)
     req.entrega = "ENTREGUE"
     req.data_entrega = date.today()
     req.entregue_por = (payload.get("entreguePor") or "").strip()
+
+    # Regra 3 — após a confirmação: o novo vira Em Uso no equipamento…
+    if req.fogo_agg:
+        agg = Aggregate.query.filter_by(fogo=req.fogo_agg).first()
+        if agg:
+            agg.situacao = SIT_APLICADO
+            agg.maquina = req.frota
+    # …e o substituído sai da máquina como PENDENTE DE DEVOLUÇÃO (almoxarifado cobra o retorno)
+    if req.casco_fogo and req.casco_status == "PENDENTE":
+        sub = Aggregate.query.filter_by(fogo=req.casco_fogo).first()
+        if sub and sub.situacao in (SIT_APLICADO, SIT_PENDENTE_DEVOLUCAO):
+            sub.situacao = SIT_PENDENTE_DEVOLUCAO
+            sub.maquina = None
+
     db.session.commit()
     return jsonify(req.to_dict())
 
@@ -663,13 +744,13 @@ def receber_casco(req_id):
 
     entregue = payload.get("entregue") == "S"
     if not entregue:
+        # continua sendo pendência de cobrança; o agregado apontado permanece Pendente de Devolução
         req.casco_status = "NAO_DEVOLVIDO"
-        req.casco_fogo = None
         db.session.commit()
         return jsonify(req.to_dict())
 
     req.casco_status = "DEVOLVIDO"
-    novo_fogo = (payload.get("cascoFogo") or "").strip().upper()
+    novo_fogo = (payload.get("cascoFogo") or "").strip().upper() or (req.casco_fogo or "")
     req.casco_fogo = novo_fogo or None
 
     if novo_fogo:
@@ -706,7 +787,7 @@ def devolver_requisition(req_id):
     if req.status == "DEVOLVIDO":
         return jsonify({"error": "Esta requisição já foi devolvida."}), 409
     if req.entrega == "PENDENTE":
-        return jsonify({"error": "Esta requisição ainda não foi entregue à frota. Confirme a entrega antes de devolver — ou exclua a requisição se ela não chegou a ser aplicada."}), 409
+        return jsonify({"error": "Confirme a entrega antes de registrar a devolução — ou exclua a requisição."}), 409
     payload = request.get_json(force=True)
     destino = payload.get("destino") if payload.get("destino") in ("pc", "disponivel") else "disponivel"
 
@@ -734,6 +815,13 @@ def devolver_requisition(req_id):
 def cancelar_requisition(req_id):
     req = Req.query.get_or_404(req_id)
 
+    # movimentação órfã: se o agregado referenciado não existe mais no cadastro,
+    # a movimentação também não pode existir — remoção livre, sem tocar saldos
+    if req.fogo_agg and not Aggregate.query.filter_by(fogo=req.fogo_agg).first():
+        db.session.delete(req)
+        db.session.commit()
+        return "", 204
+
     if req.casco_status == "DEVOLVIDO":
         if req.casco_fogo:
             casco_agg = Aggregate.query.filter_by(fogo=req.casco_fogo).first()
@@ -755,8 +843,16 @@ def cancelar_requisition(req_id):
     if req.status == "APLICADO" and req.fogo_agg:
         agg = Aggregate.query.filter_by(fogo=req.fogo_agg).first()
         if agg:
-            agg.situacao = SIT_DISPONIVEL_RECOND
+            # volta para a situação que tinha antes da requisição (Regra 3)
+            agg.situacao = req.origem_sit if req.origem_sit in (SIT_DISPONIVEL_NOVO, SIT_DISPONIVEL_RECOND) else SIT_DISPONIVEL_RECOND
             agg.maquina = None
+
+    # o agregado apontado como substituído e ainda pendente volta a Em Uso na máquina
+    if req.casco_status in ("PENDENTE", "NAO_DEVOLVIDO") and req.casco_fogo:
+        sub = Aggregate.query.filter_by(fogo=req.casco_fogo).first()
+        if sub and sub.situacao == SIT_PENDENTE_DEVOLUCAO:
+            sub.situacao = SIT_APLICADO
+            sub.maquina = req.frota
 
     db.session.delete(req)
     db.session.commit()

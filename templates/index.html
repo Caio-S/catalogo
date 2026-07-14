@@ -34,6 +34,7 @@
 </header>
 
 <nav class="mods" id="mods">
+  <div class="mbrand"><span class="b1">CRV</span> <span class="b2">CH570</span><div class="b3">GESTÃO DE AGREGADOS</div></div>
   <div class="mod on" data-v="pecas" style="--m:var(--green)"><span class="mi">📦</span><div><div class="ml">Catálogo</div><div class="mc" id="nv-pecas">—</div></div></div>
   <div class="mod" data-v="aggs" style="--m:var(--blue)"><span class="mi">🏷️</span><div><div class="ml">Agregados</div><div class="mc" id="nv-aggs">—</div></div></div>
   <div class="mod" data-v="movs" style="--m:var(--amber)"><span class="mi">🔧</span><div><div class="ml">Manutenções</div><div class="mc" id="nv-movs">—</div></div></div>
@@ -41,14 +42,14 @@
   <div class="mod" data-v="alm" style="--m:#2E9B7A"><span class="mi">🏬</span><div><div class="ml">Almoxarifado</div><div class="mc" id="nv-alm">—</div></div></div>
   <div class="mod" data-v="rel" style="--m:#9FB6C4"><span class="mi">📊</span><div><div class="ml">Relatórios</div><div class="mc">análises</div></div></div>
   <div class="mod" data-v="usuarios" id="modUsuarios" style="--m:#B899E8;display:none"><span class="mi">👤</span><div><div class="ml">Usuários</div><div class="mc" id="nv-usuarios">—</div></div></div>
+  <div class="hotkeys">
+    <span><kbd>1</kbd>–<kbd>6</kbd> trocar módulo</span>
+    <span><kbd>/</kbd> buscar</span>
+    <span><kbd>N</kbd> novo registro</span>
+    <span><kbd>P</kbd> imprimir relatório</span>
+    <span><kbd>Esc</kbd> fechar</span>
+  </div>
 </nav>
-<div class="hotkeys">
-  <span><kbd>1</kbd>–<kbd>6</kbd> trocar módulo</span>
-  <span><kbd>/</kbd> buscar</span>
-  <span><kbd>N</kbd> novo registro</span>
-  <span><kbd>P</kbd> imprimir relatório</span>
-  <span><kbd>Esc</kbd> fechar</span>
-</div>
 
 <div class="tools">
   <div class="twrap">
@@ -135,18 +136,14 @@
   <div class="fh" style="padding:0"><h2 id="aggTitle" style="flex:1">Cadastrar agregado</h2>
     <button class="fx" data-close="ov4" style="margin:18px 20px 0 0">✕</button></div>
   <div class="fgrid">
-    <div class="fld"><label>Número de fogo *</label><input id="g_fogo" style="text-transform:uppercase"></div>
-    <div class="fld"><label>Situação</label><select id="g_sit">
-      <option value="DISPONIVEL_NOVO">Disponível novo</option>
-      <option value="DISPONIVEL_RECOND">Disponível recond.</option>
-      <option value="P_CONSERTO">P/ conserto</option>
-      <option value="NO_FORNECEDOR">No fornecedor</option>
-      <option value="APLICADO">Aplicado na máquina</option>
-      <option value="BAIXADO">Baixado</option>
-    </select></div>
     <div class="fld full"><label>Peça *</label><select id="g_item"></select></div>
+    <div class="fld"><label>Número de fogo *</label>
+      <div class="fogojoin"><span class="prefix" id="g_prefixo">—</span><input id="g_fogonum" inputmode="numeric" placeholder="só o número (ex.: 1)"></div>
+      <div class="hint" id="g_fogohint">O prefixo vem da peça; informe apenas a sequência → ex.: CGE-001.</div>
+    </div>
+    <div class="fld"><label>Situação *</label><select id="g_sit"></select></div>
     <div class="fld"><label>Nº de série</label><input id="g_serie"></div>
-    <div class="fld"><label>Máquina/equipamento</label><input id="g_maq"></div>
+    <div class="fld" id="g_maqwrap"><label>Equipamento (obrigatório em uso) *</label><input id="g_maq" placeholder="frota / equipamento"></div>
     <div class="fld full"><label>Observação</label><textarea id="g_obs" rows="2"></textarea></div>
   </div>
   <div class="ferr" id="gerr"></div>
@@ -165,10 +162,9 @@
     <div class="fld"><label>Frota/equipamento *</label><input id="q_frota" placeholder="preenchido automaticamente"></div>
     <div class="fld"><label>Matrícula do funcionário</label><input id="q_matricula" inputmode="numeric" placeholder="nº no sistema"></div>
     <div class="fld"><label>Solicitante</label><input id="q_solic" placeholder="preenchido automaticamente"></div>
-    <div class="fld full">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;font-size:13px;color:var(--txt)">
-        <input type="checkbox" id="q_temcasco" style="width:auto"> Envolve devolução de casco (peça antiga)?
-      </label>
+    <div class="fld full"><label>Agregado que será substituído (em uso nesta frota)</label>
+      <select id="q_substituir"><option value="">— nenhum (primeira montagem) —</option></select>
+      <div class="hint">Preencha a frota para listar os agregados em uso nela. Após a entrega, o substituído fica <b>pendente de devolução</b> até retornar ao almoxarifado.</div>
     </div>
     <div class="fld full"><label>Observação</label><textarea id="q_obs" rows="2"></textarea></div>
   </div>
@@ -183,8 +179,9 @@
   <div class="fh" style="padding:0"><h2 style="flex:1">Documentos do envio</h2>
     <button class="fx" data-close="ov6" style="margin:18px 20px 0 0">✕</button></div>
   <div class="fgrid">
-    <div class="fld"><label>Nota de remessa</label><input id="d_nf"></div>
+    <div class="fld"><label>Solicitação de orçamento</label><input id="d_solorc" placeholder="nº / data"></div>
     <div class="fld"><label>Orçamento</label><input id="d_orc"></div>
+    <div class="fld"><label>Nota de remessa</label><input id="d_nf"></div>
     <div class="fld"><label>Pedido de compra</label><input id="d_ped"></div>
     <div class="fld"><label>Nota de devolução</label><input id="d_nfdev"></div>
     <div class="fld full"><label>Peritagem (um serviço por linha)</label><textarea id="d_serv" rows="3"></textarea></div>

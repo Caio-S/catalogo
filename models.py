@@ -97,6 +97,9 @@ SIT_P_CONSERTO = "P_CONSERTO"
 SIT_NO_FORNECEDOR = "NO_FORNECEDOR"
 SIT_APLICADO = "APLICADO"
 SIT_BAIXADO = "BAIXADO"
+# Regra 3 — estados intermediários do fluxo de requisição/substituição:
+SIT_RESERVADO = "RESERVADO"                    # requisitado, separado, aguardando o almoxarifado confirmar a entrega
+SIT_PENDENTE_DEVOLUCAO = "PENDENTE_DEVOLUCAO"  # saiu do equipamento na substituição e ainda não voltou ao almoxarifado
 
 
 class Aggregate(db.Model):
@@ -142,6 +145,7 @@ class Mov(db.Model):
     origem = db.Column(db.String(10), default="nenhum")  # 'pc' ou 'nenhum'
     data_envio = db.Column(db.Date)
     previsao_retorno = db.Column(db.Date)
+    solicitacao_orc = db.Column(db.String(60))
     nf_remessa = db.Column(db.String(60))
     orcamento = db.Column(db.String(60))
     pedido_compra = db.Column(db.String(60))
@@ -156,6 +160,20 @@ class Mov(db.Model):
 
     item = db.relationship("Item")
 
+    def etapa(self):
+        """Regra 4 — etapa atual do processo documental de conserto."""
+        if self.status == "RETORNADO":
+            return "NF_RETORNO"
+        if (self.nf_remessa or "").strip():
+            return "NF_REMESSA"
+        if (self.pedido_compra or "").strip():
+            return "PEDIDO"
+        if (self.orcamento or "").strip():
+            return "ORCAMENTO"
+        if (self.solicitacao_orc or "").strip():
+            return "SOLIC_ORC"
+        return "ENVIO"
+
     def to_dict(self):
         return {
             "id": self.id,
@@ -166,6 +184,8 @@ class Mov(db.Model):
             "origem": self.origem,
             "dataEnvio": self.data_envio.isoformat() if self.data_envio else None,
             "previsaoRetorno": self.previsao_retorno.isoformat() if self.previsao_retorno else None,
+            "solicitacaoOrc": self.solicitacao_orc,
+            "etapa": self.etapa(),
             "nfRemessa": self.nf_remessa,
             "orcamento": self.orcamento,
             "pedidoCompra": self.pedido_compra,
@@ -204,6 +224,7 @@ class Req(db.Model):
     casco_recebido_por = db.Column(db.String(60))
     casco_entregue_por = db.Column(db.String(60))
     casco_obs = db.Column(db.Text)
+    origem_sit = db.Column(db.String(20))  # situação do agregado novo antes da requisição (p/ reversão em cancelamento)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     item = db.relationship("Item")
@@ -230,4 +251,5 @@ class Req(db.Model):
             "cascoRecebidoPor": self.casco_recebido_por,
             "cascoEntreguePor": self.casco_entregue_por,
             "cascoObs": self.casco_obs,
+            "origemSit": self.origem_sit,
         }

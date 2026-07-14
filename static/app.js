@@ -156,12 +156,14 @@ async function ensureOperator() {
 const SIT_LABEL = {
   DISPONIVEL_NOVO: 'Disponível novo', DISPONIVEL_RECOND: 'Disponível recond.',
   P_CONSERTO: 'P/ conserto', NO_FORNECEDOR: 'No fornecedor',
-  APLICADO: 'Aplicado na máquina', BAIXADO: 'Baixado',
+  APLICADO: 'Em uso na máquina', BAIXADO: 'Baixado',
+  RESERVADO: 'Separado p/ entrega', PENDENTE_DEVOLUCAO: 'Pendente de devolução',
 };
 const SIT_CLS = {
   DISPONIVEL_NOVO: 'sit-dn', DISPONIVEL_RECOND: 'sit-dr',
   P_CONSERTO: 'sit-pc', NO_FORNECEDOR: 'sit-nf',
   APLICADO: 'sit-am', BAIXADO: 'sit-bx',
+  RESERVADO: 'sit-rs', PENDENTE_DEVOLUCAO: 'sit-pd',
 };
 const sitChip = s => `<span class="sit ${SIT_CLS[s] || ''}">${SIT_LABEL[s] || s}</span>`;
 
@@ -525,33 +527,78 @@ function fillItemSelect(sel, cur) {
   sel.innerHTML = catList().map(c => `<optgroup label="${esc(c)}">${DATA.filter(d => d.cat === c)
     .map(d => `<option value="${d.id}"${d.id === cur ? ' selected' : ''}>${esc(d.desc)}${d.fogo ? ' · ' + esc(d.fogo) : ''}</option>`).join('')}</optgroup>`).join('');
 }
+const aggPrefix = itemId => (byId(itemId)?.fogo || '').trim().toUpperCase();
+function syncAggPrefix() {
+  const p = aggPrefix($('#g_item').value);
+  $('#g_prefixo').textContent = p ? p + '-' : '(livre)';
+  $('#g_fogohint').textContent = p
+    ? `Prefixo automático da peça: informe só a sequência → ex.: ${p}-001.`
+    : 'Esta peça não tem base de fogo cadastrada: informe o nº de fogo completo.';
+}
+function syncAggSit() {
+  const emUso = $('#g_sit').value === 'APLICADO';
+  $('#g_maqwrap').style.display = emUso ? '' : 'none';
+}
 function openAggForm(aggId, prefillItemId) {
   const a = aggId ? AGGS.find(x => x.id === aggId) : null;
   $('#aggTitle').textContent = a ? 'Editar agregado' : 'Cadastrar agregado';
-  $('#g_fogo').value = a ? a.fogo : '';
-  $('#g_fogo').disabled = !!a;
   fillItemSelect($('#g_item'), a ? a.itemId : prefillItemId);
+  $('#g_item').disabled = !!a;
+  $('#g_item').onchange = syncAggPrefix;
+  // Regra 1 — no cadastro só: Novo, Em uso em equipamento ou P/ Conserto
+  const baseOpts = `<option value="DISPONIVEL_NOVO">Novo — disponível para requisição</option>
+    <option value="APLICADO">Em uso em equipamento</option>
+    <option value="P_CONSERTO">P/ Conserto</option>`;
+  const extra = a && !['DISPONIVEL_NOVO', 'APLICADO', 'P_CONSERTO'].includes(a.situacao)
+    ? `<option value="${a.situacao}">${SIT_LABEL[a.situacao] || a.situacao}</option>` : '';
+  $('#g_sit').innerHTML = baseOpts + extra;
   $('#g_sit').value = a ? a.situacao : 'DISPONIVEL_NOVO';
-  const bloqueio = a ? MOVS.some(m => m.fogoAgg === a.fogo && m.status === 'NO_FORNECEDOR') || REQS.some(r => r.fogoAgg === a.fogo && r.status === 'APLICADO') : false;
+  const bloqueio = a ? ['RESERVADO', 'PENDENTE_DEVOLUCAO', 'NO_FORNECEDOR'].includes(a.situacao)
+    || MOVS.some(m => m.fogoAgg === a.fogo && m.status === 'NO_FORNECEDOR')
+    || REQS.some(r => r.fogoAgg === a.fogo && r.status === 'APLICADO') : false;
   $('#g_sit').disabled = bloqueio;
+  $('#g_sit').onchange = syncAggSit;
+  if (a) {
+    $('#g_prefixo').textContent = '';
+    $('#g_fogonum').value = a.fogo;
+    $('#g_fogonum').disabled = true;
+    $('#g_fogohint').textContent = 'O nº de fogo não pode ser alterado após o cadastro.';
+  } else {
+    $('#g_fogonum').value = '';
+    $('#g_fogonum').disabled = false;
+    syncAggPrefix();
+  }
   $('#g_serie').value = a ? (a.serie || '') : '';
   $('#g_maq').value = a ? (a.maquina || '') : '';
+  syncAggSit();
   $('#g_obs').value = a ? (a.obs || '') : '';
   $('#gerr').style.display = 'none';
   $('#btnAgg').dataset.id = a ? a.id : '';
   $('#ov4').classList.add('open');
 }
 $('#btnAgg').onclick = async () => {
-  const fogo = $('#g_fogo').value.trim().toUpperCase();
   const err = m => { $('#gerr').textContent = m; $('#gerr').style.display = 'block'; };
-  if (!fogo) return err('Informe o número de fogo.');
   const itemId = $('#g_item').value;
   if (!itemId) return err('Selecione a peça.');
-  const payload = {
-    fogo, itemId, situacao: $('#g_sit').value,
-    serie: $('#g_serie').value.trim(), maquina: $('#g_maq').value.trim(), obs: $('#g_obs').value.trim(),
-  };
   const id = $('#btnAgg').dataset.id;
+  const editing = !!id;
+  const prefixo = aggPrefix(itemId);
+  const num = $('#g_fogonum').value.trim().toUpperCase();
+  const situacao = $('#g_sit').value;
+  if (!editing && !num) return err('Informe o número de fogo.');
+  if (!editing && prefixo && !/^\d+$/.test(num)) return err(`Informe apenas a sequência numérica — o prefixo ${prefixo}- é automático.`);
+  if (situacao === 'APLICADO' && !$('#g_maq').value.trim()) return err('Informe a qual equipamento o agregado pertence.');
+  const payload = {
+    itemId, situacao,
+    serie: $('#g_serie').value.trim(),
+    maquina: situacao === 'APLICADO' ? $('#g_maq').value.trim() : '',
+    obs: $('#g_obs').value.trim(),
+  };
+  if (!editing) {
+    if (prefixo) payload.fogoNum = num;
+    else payload.fogo = num;
+  }
+  const fogo = editing ? AGGS.find(a => a.id === id).fogo : (prefixo ? `${prefixo}-${num.padStart(3, '0')}` : num);
   $('#btnAgg').disabled = true;
   try {
     let saved;
@@ -575,14 +622,23 @@ async function delAgg(id) { await guarded(async () => {
 }); }
 function openAggFicha(fogo) {
   const a = aggByFogo(fogo); if (!a) return;
+  // Regra 5 — histórico completo: cadastro, requisições, entregas, substituições,
+  // devoluções, envios p/ conserto (com documentos) e retornos
   const eventos = [
+    ...(a.criadoEm ? [{ data: a.criadoEm.slice(6, 10) + '-' + a.criadoEm.slice(3, 5) + '-' + a.criadoEm.slice(0, 2), txt: `Cadastro do agregado` }] : []),
     ...MOVS.filter(m => m.fogoAgg === fogo).flatMap(m => [
-      { data: m.dataEnvio, txt: `Enviado a ${m.fornecedor}` },
-      ...(m.dataRetorno ? [{ data: m.dataRetorno, txt: `Retornou de ${m.fornecedor}` }] : []),
+      { data: m.dataEnvio, txt: `Enviado p/ conserto — ${m.fornecedor}${m.nfRemessa ? ' · NF remessa ' + m.nfRemessa : ''}${m.orcamento ? ' · orç. ' + m.orcamento : ''}${m.pedidoCompra ? ' · pedido ' + m.pedidoCompra : ''}${m.registradoPor ? ' · por ' + m.registradoPor : ''}` },
+      ...(m.dataRetorno ? [{ data: m.dataRetorno, txt: `Retornou do conserto — ${m.fornecedor}${m.nfDevolucao ? ' · NF retorno ' + m.nfDevolucao : ''} (${diasFora(m)} dias fora)` }] : []),
     ]),
     ...REQS.filter(r => r.fogoAgg === fogo).flatMap(r => [
-      { data: r.dataReq, txt: `Aplicado na frota ${r.frota}` },
-      ...(r.dataDev ? [{ data: r.dataDev, txt: `Devolvido da frota ${r.frota}` }] : []),
+      { data: r.dataReq, txt: `Requisitado p/ frota ${r.frota}${r.solicitante ? ' · sol. ' + r.solicitante : ''}${r.cascoFogo ? ' · substituindo ' + r.cascoFogo : ''}` },
+      ...(r.dataEntrega ? [{ data: r.dataEntrega, txt: `Entrega confirmada pelo almoxarifado (${r.entreguePor || '–'}) — em uso na frota ${r.frota}` }] : []),
+      ...(r.dataDev ? [{ data: r.dataDev, txt: `Devolvido da frota ${r.frota} (${diasAplicado(r)} dias aplicado)` }] : []),
+    ]),
+    ...REQS.filter(r => r.cascoFogo === fogo).flatMap(r => [
+      ...(r.dataEntrega ? [{ data: r.dataEntrega, txt: `Substituído na frota ${r.frota} pelo ${r.fogoAgg || 'novo agregado'} — pendente de devolução ao almoxarifado` }] : []),
+      ...(r.cascoStatus === 'DEVOLVIDO' && r.dataCasco ? [{ data: r.dataCasco, txt: `Casco devolvido ao almoxarifado por ${r.cascoEntreguePor || '–'} (conf. ${r.cascoRecebidoPor || '–'}) — disponível p/ manutenção` }] : []),
+      ...(r.cascoStatus === 'NAO_DEVOLVIDO' && r.dataCasco ? [{ data: r.dataCasco, txt: `⚠ Confirmado como NÃO devolvido (resp.: ${r.cascoEntreguePor || r.cascoFunc || '–'})` }] : []),
     ]),
   ].filter(e => e.data).sort((x, y) => x.data.localeCompare(y.data));
   $('#ficha').innerHTML = `
@@ -621,7 +677,7 @@ function aggCard(a) {
   </div>`;
 }
 function renderAggs() {
-  const sits = ['DISPONIVEL_NOVO', 'DISPONIVEL_RECOND', 'P_CONSERTO', 'NO_FORNECEDOR', 'APLICADO', 'BAIXADO'];
+  const sits = ['DISPONIVEL_NOVO', 'DISPONIVEL_RECOND', 'RESERVADO', 'APLICADO', 'PENDENTE_DEVOLUCAO', 'P_CONSERTO', 'NO_FORNECEDOR', 'BAIXADO'];
   const tabs = sits.map(s => `<span class="mtab ${state.gtab === s ? 'on' : ''}" data-gtab="${s}">${SIT_LABEL[s]} · ${AGGS.filter(a => a.situacao === s).length}</span>`).join('');
   let list = AGGS.filter(a => a.situacao === state.gtab);
   if (state.q) list = list.filter(a => a.fogo.toLowerCase().includes(state.q) || itemName(a.itemId).toLowerCase().includes(state.q));
@@ -716,6 +772,7 @@ async function registrarRetorno(movId) { await guarded(async () => {
 }); }
 function openDocs(movId) {
   const m = MOVS.find(x => x.id === movId); if (!m) return;
+  $('#d_solorc').value = m.solicitacaoOrc || '';
   $('#d_nf').value = m.nfRemessa || ''; $('#d_orc').value = m.orcamento || '';
   $('#d_ped').value = m.pedidoCompra || ''; $('#d_nfdev').value = m.nfDevolucao || '';
   $('#d_serv').value = m.servicos || ''; $('#d_obs').value = m.obs || '';
@@ -725,6 +782,7 @@ function openDocs(movId) {
 $('#btnDocs').onclick = async () => {
   const id = $('#btnDocs').dataset.id;
   const payload = {
+    solicitacaoOrc: $('#d_solorc').value.trim(),
     nfRemessa: $('#d_nf').value.trim(), orcamento: $('#d_orc').value.trim(),
     pedidoCompra: $('#d_ped').value.trim(), nfDevolucao: $('#d_nfdev').value.trim(),
     servicos: $('#d_serv').value.trim(), obs: $('#d_obs').value.trim(),
@@ -770,6 +828,14 @@ function openMovDetail(movId) {
         <div><div class="k">Status</div><div class="v">${m.status === 'RETORNADO' ? 'Retornado ' + br(m.dataRetorno) : (atrasado(m) ? 'Atrasado' : 'No fornecedor')}</div></div>
         <div><div class="k">Dias fora</div><div class="v">${diasFora(m)}</div></div>
       </div>
+      <div class="sect">Etapas do conserto</div>${etapasChips(m)}
+      <div class="fmeta" style="margin-top:10px">
+        <div><div class="k">Solic. orçamento</div><div class="v">${esc(m.solicitacaoOrc || '–')}</div></div>
+        <div><div class="k">Orçamento</div><div class="v">${esc(m.orcamento || '–')}</div></div>
+        <div><div class="k">Pedido</div><div class="v">${esc(m.pedidoCompra || '–')}</div></div>
+        <div><div class="k">NF remessa</div><div class="v">${esc(m.nfRemessa || '–')}</div></div>
+        <div><div class="k">NF retorno</div><div class="v">${esc(m.nfDevolucao || '–')}</div></div>
+      </div>
       ${m.servicos ? `<div class="sect">Peritagem</div><div style="white-space:pre-line;font-size:13px">${esc(m.servicos)}</div>` : ''}
       ${m.obs ? `<div class="sect">Observação</div><div style="font-size:13px">${esc(m.obs)}</div>` : ''}
       <div class="factions">
@@ -783,13 +849,22 @@ function openMovDetail(movId) {
   $('#btnPeritFicha').onclick = () => printPeritagem(m.id);
   $('#btnRetFicha') && ($('#btnRetFicha').onclick = () => registrarRetorno(m.id));
 }
+function etapasChips(m) {
+  const steps = [
+    ['Solic. Orç.', m.solicitacaoOrc], ['Orçamento', m.orcamento], ['Pedido', m.pedidoCompra],
+    ['NF Remessa', m.nfRemessa], ['NF Retorno', m.status === 'RETORNADO' ? (m.nfDevolucao || 'ok') : ''],
+  ];
+  const lastDone = steps.reduce((acc, [, v], i) => (v ? i : acc), -1);
+  return `<div class="etapas">${steps.map(([l, v], i) =>
+    `<span class="et ${v ? 'done' : (i === lastDone + 1 && m.status !== 'RETORNADO' ? 'on' : '')}">${l}</span>`).join('')}</div>`;
+}
 function movRowCard(m) {
   const done = m.status === 'RETORNADO';
   const late = atrasado(m);
   return `<div class="mrowcard ${done ? 'done' : late ? 'late' : ''}" data-id="${m.id}">
     <div class="mtop">
       <div class="mpart">${m.fogoAgg ? `<span class="fogo">${esc(m.fogoAgg)}</span>` : ''}${esc(itemName(m.itemId))}${late && !done ? '<span class="latebadge" style="margin-left:8px">ATRASADO</span>' : ''}</div>
-      <div class="mforn">${esc(m.fornecedor)}${done && can.delete() ? ` <button class="btn danger" style="padding:2px 8px;font-size:11px;margin-left:8px" data-delmov="${m.id}">🗑</button>` : ''}</div>
+      <div class="mforn">${esc(m.fornecedor)}</div>
     </div>
     <div class="mdet">
       <div>Enviado <b>${br(m.dataEnvio)}</b></div>
@@ -797,6 +872,7 @@ function movRowCard(m) {
       ${m.previsaoRetorno ? `<div>Previsão <b>${br(m.previsaoRetorno)}</b></div>` : ''}
       <div class="mdias">${diasFora(m)}<div class="dl">dias</div></div>
     </div>
+    ${etapasChips(m)}
   </div>`;
 }
 function renderMovs() {
@@ -814,18 +890,7 @@ function renderMovs() {
   $('#main').innerHTML = `<div class="mtabs">${tabs}</div>` +
     (list.length ? list.map(movRowCard).join('') : `<div class="empty">Nenhum envio nesta aba.</div>`);
   $('#main').querySelectorAll('.mtab').forEach(t => t.onclick = () => { state.mtab = t.dataset.mtab; render(); });
-  $('#main').querySelectorAll('[data-delmov]').forEach(b => b.onclick = e => { e.stopPropagation(); delMov(b.dataset.delmov); });
 }
-async function delMov(id) { await guarded(async () => {
-  const m = MOVS.find(x => x.id === id); if (!m) return;
-  if (!await uiConfirm(`Excluir o registro de envio a "${m.fornecedor}" (${itemName(m.itemId)})?\n\nO envio já foi retornado, então os saldos não são alterados — só o histórico é removido.`, { title: 'Excluir envio', danger: true, okLabel: 'Excluir' })) return;
-  try {
-    await api(`/movs/${id}`, { method: 'DELETE' });
-    MOVS = MOVS.filter(x => x.id !== id);
-    updateNav(); render();
-    showBanner('ok', `Envio excluído: ${m.fornecedor}.`, '');
-  } catch (e) { showBanner('err', 'Falha ao excluir: ' + e.message, ''); }
-}); }
 
 /* =============== modulo: requisicoes (frota) =============== */
 function fillAggSelect(sel) {
@@ -834,12 +899,24 @@ function fillAggSelect(sel) {
     ? disponiveis.map(a => `<option value="${esc(a.fogo)}">${esc(a.fogo)} · ${esc(itemName(a.itemId))} (${SIT_LABEL[a.situacao]})</option>`).join('')
     : '<option value="">Nenhum agregado disponível</option>';
 }
+function fillSubstituirOptions() {
+  const frota = $('#q_frota').value.trim().toUpperCase();
+  const fogoNovo = $('#q_agg').value;
+  const emUso = AGGS.filter(a => a.situacao === 'APLICADO' && a.fogo !== fogoNovo
+    && (!frota || (a.maquina || '').trim().toUpperCase() === frota));
+  $('#q_substituir').innerHTML =
+    '<option value="">— nenhum (primeira montagem) —</option>' +
+    emUso.map(a => `<option value="${esc(a.fogo)}">${esc(a.fogo)} · ${esc(itemName(a.itemId))}${a.maquina ? ' · ' + esc(a.maquina) : ''}</option>`).join('') +
+    '<option value="__semcadastro__">Casco antigo sem cadastro (sem nº de fogo)</option>';
+}
 function openReqForm(prefillFogo) {
   fillAggSelect($('#q_agg'));
   if (prefillFogo) $('#q_agg').value = prefillFogo;
   $('#q_frotacod').value = ''; $('#q_frota').value = '';
   $('#q_matricula').value = ''; $('#q_solic').value = '';
-  $('#q_temcasco').checked = false;
+  fillSubstituirOptions();
+  $('#q_agg').onchange = fillSubstituirOptions;
+  $('#q_frota').oninput = fillSubstituirOptions;
   $('#q_obs').value = '';
   $('#qerr').style.display = 'none';
   $('#ov5').classList.add('open');
@@ -854,7 +931,7 @@ async function lookupInto(codeInputSel, targetInputSel, path, resultKey, notFoun
     showBanner('err', notFoundMsg + ': ' + e.message, '');
   }
 }
-$('#q_frotacod').addEventListener('blur', () => lookupInto('#q_frotacod', '#q_frota', '/lookup/frota', 'descricao', 'Frota não encontrada'));
+$('#q_frotacod').addEventListener('blur', async () => { await lookupInto('#q_frotacod', '#q_frota', '/lookup/frota', 'descricao', 'Frota não encontrada'); fillSubstituirOptions(); });
 $('#q_matricula').addEventListener('blur', () => lookupInto('#q_matricula', '#q_solic', '/lookup/funcionario', 'nome', 'Matrícula não encontrada'));
 $('#btnReq').onclick = async () => {
   const err = m => { $('#qerr').textContent = m; $('#qerr').style.display = 'block'; };
@@ -863,14 +940,16 @@ $('#btnReq').onclick = async () => {
   const solicitante = $('#q_solic').value.trim();
   if (!fogo) return err('Selecione um agregado disponível.');
   if (!frota) return err('Informe a frota/equipamento.');
-  const temCasco = $('#q_temcasco').checked;
-  if (temCasco && !solicitante) return err('Informe o funcionário responsável pelo casco.');
+  const subVal = $('#q_substituir').value;
+  const temCasco = !!subVal;
+  if (temCasco && !solicitante) return err('Informe o funcionário responsável pela devolução do casco.');
   const agg = aggByFogo(fogo);
   const payload = {
     itemId: agg.itemId, fogoAgg: fogo, frota,
     solicitante, obs: $('#q_obs').value.trim(),
     dataReq: todayISO(), registradoPor: ensureOperator(),
-    cascoStatus: temCasco ? 'PENDENTE' : null,
+    substituirFogo: (subVal && subVal !== '__semcadastro__') ? subVal : null,
+    cascoStatus: subVal === '__semcadastro__' ? 'PENDENTE' : null,
     cascoFunc: temCasco ? solicitante : null,
   };
   $('#btnReq').disabled = true;
@@ -880,16 +959,22 @@ $('#btnReq').onclick = async () => {
     const freshAggs = await api('/aggregates'); AGGS = freshAggs;
     updateNav(); render();
     $('#ov5').classList.remove('open');
-    showBanner('ok', `Requisição criada para ${frota}.`, '');
+    showBanner('ok', `Requisição criada para ${frota}: ${fogo} separado, aguardando confirmação de entrega do almoxarifado.${saved.cascoFogo ? ' Substituirá o ' + saved.cascoFogo + '.' : ''}`, '');
   } catch (e) { return err(e.message); }
   finally { $('#btnReq').disabled = false; }
 };
 async function confirmarEntrega(reqId) { await guarded(async () => {
+  const r0 = REQS.find(r => r.id === reqId);
+  if (!await uiConfirm(`Confirmar a ENTREGA do agregado ${r0?.fogoAgg || ''} para a frota ${r0?.frota || ''}?` +
+    (r0?.cascoFogo ? `\n\nO agregado ${r0.cascoFogo} sai do equipamento e fica PENDENTE DE DEVOLUÇÃO.` : ''),
+    { title: 'Confirmar entrega', okLabel: 'Confirmar entrega' })) return;
   try {
     const saved = await api(`/requisitions/${reqId}/entrega`, { method: 'POST', body: JSON.stringify({ entreguePor: await ensureOperator() }) });
     Object.assign(REQS.find(r => r.id === reqId), saved);
-    render();
-    showBanner('ok', 'Entrega confirmada.', '');
+    const freshAggs = await api('/aggregates'); AGGS = freshAggs;
+    updateNav(); render();
+    showBanner('ok', `Entrega confirmada: ${saved.fogoAgg || 'agregado'} em uso na frota ${saved.frota}.` +
+      (saved.cascoFogo && saved.cascoStatus === 'PENDENTE' ? ` ${saved.cascoFogo} pendente de devolução (${saved.cascoFunc || 'cobrar'}).` : ''), '');
   } catch (e) { showBanner('err', 'Falha: ' + e.message, ''); }
 }); }
 function syncCascoEntregue() {
@@ -899,7 +984,7 @@ function syncCascoEntregue() {
 }
 $('#c_entregue').addEventListener('change', syncCascoEntregue);
 function fillCascoFogoOptions(r) {
-  const cand = aggsOf(r.itemId).filter(g => g.fogo !== r.fogoAgg && !['NO_FORNECEDOR', 'P_CONSERTO', 'BAIXADO'].includes(g.situacao));
+  const cand = aggsOf(r.itemId).filter(g => g.fogo !== r.fogoAgg && !['NO_FORNECEDOR', 'P_CONSERTO', 'BAIXADO', 'RESERVADO'].includes(g.situacao));
   $('#c_fogo').innerHTML =
     '<option value="">— casco sem cadastro (lança só no saldo P/ Conserto) —</option>' +
     cand.map(g => `<option value="${esc(g.fogo)}">${esc(g.fogo)} · ${esc(SIT_LABEL[g.situacao] || g.situacao)}${g.maquina ? ' · ' + esc(g.maquina) : ''}</option>`).join('') +
@@ -913,6 +998,7 @@ function receberCasco(reqId) {
   $('#c_data').value = todayISO();
   $('#c_quem').value = r.cascoFunc || '';
   fillCascoFogoOptions(r);
+  if (r.cascoFogo) $('#c_fogo').value = r.cascoFogo;
   $('#c_obs').value = '';
   syncCascoEntregue();
   $('#cerr').style.display = 'none';
@@ -999,6 +1085,7 @@ function reqCard(r) {
     <div class="mdet">
       <div>Aplicado <b>${br(r.dataReq)}</b></div>
       <div>Entrega <b>${r.entrega === 'ENTREGUE' ? 'Confirmada' : 'Pendente'}</b></div>
+      ${r.cascoFogo ? `<div>Substitui <b>${esc(r.cascoFogo)}</b></div>` : ''}
       ${r.cascoStatus ? `<div>Casco <b>${r.cascoStatus === 'DEVOLVIDO' ? 'Devolvido' : r.cascoStatus === 'NAO_DEVOLVIDO' ? 'Não devolvido' : 'Pendente'}</b></div>` : ''}
       <div class="mdias">${diasAplicado(r)}<div class="dl">dias</div></div>
     </div>
@@ -1008,7 +1095,7 @@ function reqCard(r) {
     <div class="factions" style="margin-top:10px">
       ${r.entrega === 'PENDENTE' ? `<button class="btn" data-entrega="${r.id}">📦 Confirmar entrega</button>` : ''}
       ${r.status === 'APLICADO' && r.entrega === 'ENTREGUE' && cascoPendente(r) ? `<button class="btn amber" data-casco="${r.id}">🔩 Receber casco</button>` : ''}
-      ${r.status === 'APLICADO' && r.entrega === 'ENTREGUE' ? `<button class="btn primary" data-devolver="${r.id}">↩ Devolver</button>` : ''}
+      ${r.status === 'APLICADO' ? `<button class="btn primary" data-devolver="${r.id}">↩ Devolver</button>` : ''}
       ${can.delete() ? `<button class="btn danger" title="Excluir requisição" data-excluirreq="${r.id}">🗑</button>` : ''}
     </div>
   </div>`;

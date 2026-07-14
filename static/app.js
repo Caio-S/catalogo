@@ -171,15 +171,22 @@ const sitChip = s => `<span class="sit ${SIT_CLS[s] || ''}">${SIT_LABEL[s] || s}
 function refreshKpis() {
   const t = k => DATA.reduce((s, d) => s + (+d[k] || 0), 0);
   const kpis = [
-    ['Saldo novo', t('sn'), 'var(--blue)', 'peças novas em estoque'],
-    ['P/ conserto', t('pc'), 'var(--amber)', 'aguardando envio'],
-    ['Saldo recond.', t('sr'), 'var(--green)', 'prontas para uso'],
-    ['Em manutenção', t('em'), '#F07E3C', 'em recondicionamento'],
-    ['Devendo', t('dv'), 'var(--red)', 'pendências de fornecedor'],
+    ['sn', 'Saldo novo', t('sn'), 'var(--blue)', 'peças novas em estoque'],
+    ['pc', 'P/ conserto', t('pc'), 'var(--amber)', 'aguardando envio'],
+    ['sr', 'Saldo recond.', t('sr'), 'var(--green)', 'prontas para uso'],
+    ['em', 'Em manutenção', t('em'), '#F07E3C', 'em recondicionamento'],
+    ['dv', 'Devendo', t('dv'), 'var(--red)', 'pendências de fornecedor'],
   ];
-  $('#kpis').innerHTML = kpis.map(([l, v, c, s]) =>
-    `<div class="kpi" style="--k:${c}"><div class="lab">${l}</div><div class="val">${v}</div><div class="sub">${s}</div></div>`).join('');
+  $('#kpis').innerHTML = kpis.map(([k, l, v, c, s]) =>
+    `<div class="kpi${state.f.has(k) ? ' on' : ''}" data-kpi="${k}" style="--k:${c}"><div class="lab">${l}</div><div class="val">${v}</div><div class="sub">${s}</div></div>`).join('');
 }
+$('#kpis').addEventListener('click', e => {
+  const k = e.target.closest('.kpi')?.dataset.kpi;
+  if (!k) return;
+  state.f.has(k) ? state.f.delete(k) : state.f.add(k);
+  setView('pecas');
+  refreshKpis();
+});
 
 /* =============== navegacao por modulos =============== */
 const state = { q: '', cat: '', f: new Set(), view: 'pecas', mtab: 'aberto', gtab: 'DISPONIVEL_RECOND', relForn: null };
@@ -189,7 +196,10 @@ function updateNav() {
   $('#nv-aggs').textContent = AGGS.length + ' cadastrados';
   const noForn = MOVS.filter(m => m.status === 'NO_FORNECEDOR').length;
   const atrasados = MOVS.filter(atrasado).length;
+  const retornados = MOVS.filter(m => m.status === 'RETORNADO').length;
   $('#nv-movs').textContent = noForn + ' no fornecedor' + (atrasados ? ` · ${atrasados} atrasado(s)` : '');
+  const msubVals = { aberto: noForn, atrasado: atrasados, retornado: retornados, todos: MOVS.length };
+  Object.entries(msubVals).forEach(([k, v]) => { const el = $('#msub-' + k); if (el) el.textContent = v; });
   const aplicadas = REQS.filter(r => r.status === 'APLICADO').length;
   $('#nv-reqs').textContent = aplicadas + ' na frota';
   const cascos = REQS.filter(cascoPendente).length;
@@ -201,6 +211,7 @@ function updateNav() {
 function setView(v) {
   state.view = v;
   document.querySelectorAll('.mod').forEach(m => m.classList.toggle('on', m.dataset.v === v));
+  document.querySelectorAll('.modwrap').forEach(w => w.classList.toggle('expanded', w.querySelector('.mod')?.dataset.v === v));
   const isPecas = v === 'pecas';
   $('#fcat').style.display = isPecas ? '' : 'none';
   document.querySelectorAll('.tools .chip').forEach(c => c.style.display = isPecas ? '' : 'none');
@@ -229,6 +240,11 @@ function setView(v) {
   if (v === 'rel' || v === 'reqs' || v === 'alm') refreshData(true);
 }
 document.querySelectorAll('.mod').forEach(m => m.onclick = () => setView(m.dataset.v));
+document.querySelectorAll('.msubitem').forEach(el => el.onclick = e => {
+  e.stopPropagation();
+  state.mtab = el.dataset.mtab;
+  setView('movs');
+});
 
 /* =============== filtros e grid (catalogo) =============== */
 function refreshCatSelect() {
@@ -239,7 +255,7 @@ function refreshCatSelect() {
 document.querySelectorAll('.tools .chip').forEach(ch => ch.onclick = () => {
   const f = ch.dataset.f;
   state.f.has(f) ? state.f.delete(f) : state.f.add(f);
-  ch.classList.toggle('on'); render();
+  ch.classList.toggle('on'); render(); refreshKpis();
 });
 $('#q').oninput = e => { state.q = e.target.value.toLowerCase(); render(); };
 $('#fcat').onchange = e => { state.cat = e.target.value; render(); };
@@ -251,9 +267,11 @@ function status(d) {
 function match(d) {
   if (state.cat && d.cat !== state.cat) return false;
   if (state.f.size) {
+    if (state.f.has('sn') && !(d.sn > 0)) return false;
+    if (state.f.has('pc') && !(d.pc > 0)) return false;
+    if (state.f.has('sr') && !(d.sr > 0)) return false;
+    if (state.f.has('em') && !abertos(d.id).length) return false;
     if (state.f.has('dv') && !(d.dv > 0)) return false;
-    if (state.f.has('fr') && !abertos(d.id).length) return false;
-    if (state.f.has('ok') && !(d.sr > 0)) return false;
   }
   if (state.q) {
     const hay = `${d.desc} ${d.codNovo} ${d.codRec} ${d.ref} ${d.fogo}`.toLowerCase();
@@ -290,6 +308,7 @@ function card(d, idx) {
 }
 function renderPecas() {
   refreshCatSelect();
+  document.querySelectorAll('.tools .chip[data-f]').forEach(c => c.classList.toggle('on', state.f.has(c.dataset.f)));
   if (!DATA.length) {
     $('#cnt').textContent = '';
     $('#main').innerHTML = `<div class="empty"><b>Catálogo vazio.</b><br><br>
@@ -890,6 +909,7 @@ function renderMovs() {
   $('#main').innerHTML = `<div class="mtabs">${tabs}</div>` +
     (list.length ? list.map(movRowCard).join('') : `<div class="empty">Nenhum envio nesta aba.</div>`);
   $('#main').querySelectorAll('.mtab').forEach(t => t.onclick = () => { state.mtab = t.dataset.mtab; render(); });
+  document.querySelectorAll('.msubitem').forEach(el => el.classList.toggle('on', el.dataset.mtab === state.mtab));
 }
 
 /* =============== modulo: requisicoes (frota) =============== */

@@ -37,7 +37,15 @@
   <div class="mbrand"><span class="b1">CRV</span> <span class="b2">CH570</span><div class="b3">GESTÃO DE AGREGADOS</div></div>
   <div class="mod on" data-v="pecas" style="--m:var(--green)"><span class="mi">📦</span><div><div class="ml">Catálogo</div><div class="mc" id="nv-pecas">—</div></div></div>
   <div class="mod" data-v="aggs" style="--m:var(--blue)"><span class="mi">🏷️</span><div><div class="ml">Agregados</div><div class="mc" id="nv-aggs">—</div></div></div>
-  <div class="mod" data-v="movs" style="--m:var(--amber)"><span class="mi">🔧</span><div><div class="ml">Manutenções</div><div class="mc" id="nv-movs">—</div></div></div>
+  <div class="modwrap">
+    <div class="mod" data-v="movs" style="--m:var(--amber)"><span class="mi">🔧</span><div><div class="ml">Manutenções</div><div class="mc" id="nv-movs">—</div></div></div>
+    <div class="msub">
+      <div class="msubitem" data-mtab="aberto"><span>No fornecedor</span><b id="msub-aberto">—</b></div>
+      <div class="msubitem" data-mtab="atrasado"><span>Atrasados</span><b id="msub-atrasado">—</b></div>
+      <div class="msubitem" data-mtab="retornado"><span>Retornados</span><b id="msub-retornado">—</b></div>
+      <div class="msubitem" data-mtab="todos"><span>Todos</span><b id="msub-todos">—</b></div>
+    </div>
+  </div>
   <div class="mod" data-v="reqs" style="--m:#F07E3C"><span class="mi">🚜</span><div><div class="ml">Requisições</div><div class="mc" id="nv-reqs">—</div></div></div>
   <div class="mod" data-v="alm" style="--m:#2E9B7A"><span class="mi">🏬</span><div><div class="ml">Almoxarifado</div><div class="mc" id="nv-alm">—</div></div></div>
   <div class="mod" data-v="rel" style="--m:#9FB6C4"><span class="mi">📊</span><div><div class="ml">Relatórios</div><div class="mc">análises</div></div></div>
@@ -59,8 +67,8 @@
     </div>
     <select id="fcat"><option value="">Todas as categorias</option></select>
     <span class="chip c-dv" data-f="dv">Devendo</span>
-    <span class="chip c-em" data-f="fr">🔧 No fornecedor</span>
-    <span class="chip c-ok" data-f="ok">Com saldo recond.</span>
+    <span class="chip c-em" data-f="em">🔧 No fornecedor</span>
+    <span class="chip c-ok" data-f="sr">Com saldo recond.</span>
     <button class="btn primary" id="btnAdd">＋ Adicionar peça</button>
     <button class="btn" id="btnExport">⬇ Exportar Excel</button>
     <button class="btn" id="btnRefresh" title="Sincronizar com os dados mais recentes">🔄</button>

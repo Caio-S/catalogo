@@ -196,10 +196,7 @@ function updateNav() {
   $('#nv-aggs').textContent = AGGS.length + ' cadastrados';
   const noForn = MOVS.filter(m => m.status === 'NO_FORNECEDOR').length;
   const atrasados = MOVS.filter(atrasado).length;
-  const retornados = MOVS.filter(m => m.status === 'RETORNADO').length;
   $('#nv-movs').textContent = noForn + ' no fornecedor' + (atrasados ? ` · ${atrasados} atrasado(s)` : '');
-  const msubVals = { aberto: noForn, atrasado: atrasados, retornado: retornados, todos: MOVS.length };
-  Object.entries(msubVals).forEach(([k, v]) => { const el = $('#msub-' + k); if (el) el.textContent = v; });
   const aplicadas = REQS.filter(r => r.status === 'APLICADO').length;
   $('#nv-reqs').textContent = aplicadas + ' na frota';
   const cascos = REQS.filter(cascoPendente).length;
@@ -240,11 +237,15 @@ function setView(v) {
   if (v === 'rel' || v === 'reqs' || v === 'alm') refreshData(true);
 }
 document.querySelectorAll('.mod').forEach(m => m.onclick = () => setView(m.dataset.v));
-document.querySelectorAll('.msubitem').forEach(el => el.onclick = e => {
-  e.stopPropagation();
-  state.mtab = el.dataset.mtab;
-  setView('movs');
-});
+
+/** Popula um dropdown do menu lateral. items: [[chave, rótulo, contagem], ...] */
+function renderMsub(id, items, activeKey, onSelect) {
+  const el = $('#' + id);
+  if (!el) return;
+  el.innerHTML = items.map(([k, l, c]) =>
+    `<div class="msubitem${k === activeKey ? ' on' : ''}" data-k="${esc(String(k))}"><span>${esc(l)}</span><b>${c}</b></div>`).join('');
+  el.querySelectorAll('.msubitem').forEach(item => item.onclick = e => { e.stopPropagation(); onSelect(item.dataset.k); });
+}
 
 /* =============== filtros e grid (catalogo) =============== */
 function refreshCatSelect() {
@@ -309,6 +310,7 @@ function card(d, idx) {
 function renderPecas() {
   refreshCatSelect();
   document.querySelectorAll('.tools .chip[data-f]').forEach(c => c.classList.toggle('on', state.f.has(c.dataset.f)));
+  renderMsub('msub-pecas', [['ch570', 'CH570', DATA.length]], 'ch570', () => setView('pecas'));
   if (!DATA.length) {
     $('#cnt').textContent = '';
     $('#main').innerHTML = `<div class="empty"><b>Catálogo vazio.</b><br><br>
@@ -704,6 +706,7 @@ function renderAggs() {
   $('#main').innerHTML = `<div class="mtabs">${tabs}</div>` +
     (list.length ? `<div class="grid">${list.map(aggCard).join('')}</div>` : `<div class="empty">Nenhum agregado nesta situação.</div>`);
   $('#main').querySelectorAll('.mtab').forEach(t => t.onclick = () => { state.gtab = t.dataset.gtab; render(); });
+  renderMsub('msub-aggs', sits.map(s => [s, SIT_LABEL[s], AGGS.filter(a => a.situacao === s).length]), state.gtab, k => { state.gtab = k; setView('aggs'); });
   $('#main').querySelectorAll('[data-fogo]').forEach(el => el.onclick = () => openAggFicha(el.dataset.fogo));
   $('#main').querySelectorAll('[data-requisitar]').forEach(b => b.onclick = e => { e.stopPropagation(); openReqForm(b.dataset.requisitar); });
 }
@@ -909,7 +912,7 @@ function renderMovs() {
   $('#main').innerHTML = `<div class="mtabs">${tabs}</div>` +
     (list.length ? list.map(movRowCard).join('') : `<div class="empty">Nenhum envio nesta aba.</div>`);
   $('#main').querySelectorAll('.mtab').forEach(t => t.onclick = () => { state.mtab = t.dataset.mtab; render(); });
-  document.querySelectorAll('.msubitem').forEach(el => el.classList.toggle('on', el.dataset.mtab === state.mtab));
+  renderMsub('msub-movs', tabDefs.map(([k, l, arr]) => [k, l, arr.length]), state.mtab, k => { state.mtab = k; setView('movs'); });
 }
 
 /* =============== modulo: requisicoes (frota) =============== */

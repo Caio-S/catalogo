@@ -575,11 +575,12 @@ function openAggForm(aggId, prefillItemId) {
   fillItemSelect($('#g_item'), a ? a.itemId : prefillItemId);
   $('#g_item').disabled = !!a;
   $('#g_item').onchange = syncAggPrefix;
-  // Regra 1 — no cadastro só: Novo, Em uso em equipamento ou P/ Conserto
+  // Regra 1 — no cadastro: Novo, Recondicionado p/ uso, Em uso em equipamento ou P/ Conserto
   const baseOpts = `<option value="DISPONIVEL_NOVO">Novo — disponível para requisição</option>
+    <option value="DISPONIVEL_RECOND">Recondicionado para uso</option>
     <option value="APLICADO">Em uso em equipamento</option>
     <option value="P_CONSERTO">P/ Conserto</option>`;
-  const extra = a && !['DISPONIVEL_NOVO', 'APLICADO', 'P_CONSERTO'].includes(a.situacao)
+  const extra = a && !['DISPONIVEL_NOVO', 'DISPONIVEL_RECOND', 'APLICADO', 'P_CONSERTO'].includes(a.situacao)
     ? `<option value="${a.situacao}">${SIT_LABEL[a.situacao] || a.situacao}</option>` : '';
   $('#g_sit').innerHTML = baseOpts + extra;
   $('#g_sit').value = a ? a.situacao : 'DISPONIVEL_NOVO';

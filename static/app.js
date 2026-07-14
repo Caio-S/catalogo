@@ -369,14 +369,23 @@ document.addEventListener('keydown', e => {
 });
 
 function checkConsist(d) {
-  // sn/sr vêm do ERP (MariaDB); os agregados "Disponível novo/recond" são unidades
-  // rastreadas no app. Não dá pra somar as duas fontes — mas se houver MAIS agregados
-  // disponíveis do que o ERP registra, é sinal de cadastro em duplicidade (dupla contagem).
+  // sn/sr vêm do ERP (MariaDB), mas cada unidade em estoque deve ter um agregado
+  // individual cadastrado (nº de fogo). Avisa sempre que a contagem de agregados
+  // "Disponível novo/recond." não bate com o saldo do ERP — pra menos (falta cadastrar)
+  // ou pra mais (duplicidade).
   const novoAgg = aggsOf(d.id).filter(a => a.situacao === 'DISPONIVEL_NOVO').length;
   const recondAgg = aggsOf(d.id).filter(a => a.situacao === 'DISPONIVEL_RECOND').length;
   const avisos = [];
-  if (novoAgg > (d.sn || 0)) avisos.push(`${novoAgg} agregado(s) "Disponível novo" cadastrado(s), mas o ERP registra só ${d.sn || 0} novo(s) — verifique duplicidade.`);
-  if (recondAgg > (d.sr || 0)) avisos.push(`${recondAgg} agregado(s) "Disponível recond." cadastrado(s), mas o ERP registra só ${d.sr || 0} recond. — verifique duplicidade.`);
+  if (novoAgg !== (d.sn || 0)) {
+    avisos.push(novoAgg < (d.sn || 0)
+      ? `Faltam agregados "Disponível novo": ERP registra ${d.sn || 0}, só ${novoAgg} cadastrado(s).`
+      : `${novoAgg} agregado(s) "Disponível novo" cadastrado(s), mas o ERP registra só ${d.sn || 0} — verifique duplicidade.`);
+  }
+  if (recondAgg !== (d.sr || 0)) {
+    avisos.push(recondAgg < (d.sr || 0)
+      ? `Faltam agregados "Disponível recond.": ERP registra ${d.sr || 0}, só ${recondAgg} cadastrado(s).`
+      : `${recondAgg} agregado(s) "Disponível recond." cadastrado(s), mas o ERP registra só ${d.sr || 0} — verifique duplicidade.`);
+  }
   return avisos.length ? avisos.join(' ') : null;
 }
 

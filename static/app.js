@@ -787,7 +787,7 @@ function movRowCard(m) {
   return `<div class="mrowcard ${done ? 'done' : late ? 'late' : ''}" data-id="${m.id}">
     <div class="mtop">
       <div class="mpart">${m.fogoAgg ? `<span class="fogo">${esc(m.fogoAgg)}</span>` : ''}${esc(itemName(m.itemId))}${late && !done ? '<span class="latebadge" style="margin-left:8px">ATRASADO</span>' : ''}</div>
-      <div class="mforn">${esc(m.fornecedor)}</div>
+      <div class="mforn">${esc(m.fornecedor)}${done && can.delete() ? ` <button class="btn danger" style="padding:2px 8px;font-size:11px;margin-left:8px" data-delmov="${m.id}">🗑</button>` : ''}</div>
     </div>
     <div class="mdet">
       <div>Enviado <b>${br(m.dataEnvio)}</b></div>
@@ -812,7 +812,18 @@ function renderMovs() {
   $('#main').innerHTML = `<div class="mtabs">${tabs}</div>` +
     (list.length ? list.map(movRowCard).join('') : `<div class="empty">Nenhum envio nesta aba.</div>`);
   $('#main').querySelectorAll('.mtab').forEach(t => t.onclick = () => { state.mtab = t.dataset.mtab; render(); });
+  $('#main').querySelectorAll('[data-delmov]').forEach(b => b.onclick = e => { e.stopPropagation(); delMov(b.dataset.delmov); });
 }
+async function delMov(id) { await guarded(async () => {
+  const m = MOVS.find(x => x.id === id); if (!m) return;
+  if (!await uiConfirm(`Excluir o registro de envio a "${m.fornecedor}" (${itemName(m.itemId)})?\n\nO envio já foi retornado, então os saldos não são alterados — só o histórico é removido.`, { title: 'Excluir envio', danger: true, okLabel: 'Excluir' })) return;
+  try {
+    await api(`/movs/${id}`, { method: 'DELETE' });
+    MOVS = MOVS.filter(x => x.id !== id);
+    updateNav(); render();
+    showBanner('ok', `Envio excluído: ${m.fornecedor}.`, '');
+  } catch (e) { showBanner('err', 'Falha ao excluir: ' + e.message, ''); }
+}); }
 
 /* =============== modulo: requisicoes (frota) =============== */
 function fillAggSelect(sel) {

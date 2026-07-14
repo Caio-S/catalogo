@@ -28,9 +28,12 @@ document.addEventListener('animationend', e => {
   if (e.animationName === 'cardDrop') e.target.classList.remove('tag-enter');
 });
 
+let bannerTimer = null;
 function showBanner(kind, msg, ts) {
-  const b = $('#banner'); b.className = 'banner ' + kind; b.style.display = 'block';
+  const b = $('#banner'); b.className = 'banner ' + kind + ' show';
   $('#bmsg').textContent = msg; $('#bts').textContent = ts || '';
+  clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => b.classList.remove('show'), 3000);
 }
 
 async function api(path, opts) {
@@ -1429,13 +1432,9 @@ $('#btnLogout').onclick = async () => {
 
     await loadAll();
     refreshKpis(); updateNav(); render();
-    if (META.mariadbTs) {
-      $('#updDate').textContent = META.mariadbTs;
-      showBanner('info', 'Catálogo carregado.', 'Última consulta ao banco: ' + META.mariadbTs);
-    } else if (META.ts) {
-      $('#updDate').textContent = META.ts;
-      showBanner('info', 'Catálogo carregado.', 'Última atualização: ' + META.ts);
-    }
+    if (META.mariadbTs) $('#updDate').textContent = META.mariadbTs;
+    else if (META.ts) $('#updDate').textContent = META.ts;
+    showBanner('ok', 'Catálogo sincronizado.', '');
   } catch (err) {
     showBanner('err', 'Falha ao carregar catálogo: ' + err.message, '');
     render();

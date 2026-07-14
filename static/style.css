@@ -52,11 +52,15 @@ select{background:var(--panel);border:1px solid var(--line);border-radius:6px;co
 .count{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--mut)}
 .count b{color:var(--green)}
 
-.banner{max-width:1240px;margin:10px auto 0;padding:0 28px;display:none}
-.banner .inner{border-radius:7px;padding:10px 14px;font-size:13px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.banner{position:fixed;right:20px;bottom:20px;z-index:200;max-width:420px;width:calc(100% - 40px);
+  opacity:0;transform:translateY(12px);pointer-events:none;transition:opacity .25s,transform .25s}
+.banner.show{opacity:1;transform:translateY(0);pointer-events:auto}
+.banner .inner{border-radius:8px;padding:12px 16px;font-size:13px;display:flex;justify-content:space-between;
+  gap:10px;flex-wrap:wrap;box-shadow:0 12px 32px rgba(0,0,0,.45)}
 .banner.ok .inner{background:#1E3317;border:1px solid var(--green-d);color:#CBEBB8}
 .banner.err .inner{background:#3A1D1D;border:1px solid var(--red);color:#F3C2C2}
 .banner.info .inner{background:#1B2733;border:1px solid var(--blue);color:#BFD9F2}
+@media(max-width:700px){ .banner{left:16px;right:16px;bottom:16px;max-width:none;width:auto} }
 
 main{max-width:1240px;margin:22px auto 60px;padding:0 28px}
 .catlab{font-family:var(--disp);font-weight:600;font-size:16px;letter-spacing:.18em;text-transform:uppercase;color:var(--green);

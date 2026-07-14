@@ -453,6 +453,9 @@ def create_mov():
     fogo_agg = (payload.get("fogoAgg") or "").strip().upper() or None
     origem = payload.get("origem") if payload.get("origem") in ("pc", "nenhum") else "nenhum"
 
+    if origem == "pc" and qtd > (item.pc or 0):
+        return jsonify({"error": f"Não é possível enviar {qtd} un a partir de 'P/ Conserto': só há {item.pc or 0} nessa situação."}), 409
+
     mov = Mov(
         id=new_id("m"),
         item_id=item_id,
@@ -603,6 +606,14 @@ def create_requisition():
 
     fogo_agg = (payload.get("fogoAgg") or "").strip().upper() or None
 
+    agg = None
+    if fogo_agg:
+        agg = Aggregate.query.filter_by(fogo=fogo_agg).first()
+        if not agg:
+            return jsonify({"error": f"Agregado {fogo_agg} não encontrado."}), 404
+        if agg.situacao not in (SIT_DISPONIVEL_NOVO, SIT_DISPONIVEL_RECOND):
+            return jsonify({"error": f"O agregado {fogo_agg} não está disponível para requisição (já está em uso). Atualize a página e verifique a situação dele."}), 409
+
     req = Req(
         id=new_id("r"),
         item_id=item_id,
@@ -619,11 +630,9 @@ def create_requisition():
     )
     db.session.add(req)
 
-    if fogo_agg:
-        agg = Aggregate.query.filter_by(fogo=fogo_agg).first()
-        if agg:
-            agg.situacao = SIT_APLICADO
-            agg.maquina = frota
+    if agg:
+        agg.situacao = SIT_APLICADO
+        agg.maquina = frota
 
     db.session.commit()
     return jsonify(req.to_dict()), 201
@@ -696,6 +705,8 @@ def devolver_requisition(req_id):
     req = Req.query.get_or_404(req_id)
     if req.status == "DEVOLVIDO":
         return jsonify({"error": "Esta requisição já foi devolvida."}), 409
+    if req.entrega == "PENDENTE":
+        return jsonify({"error": "Esta requisição ainda não foi entregue à frota. Confirme a entrega antes de devolver — ou exclua a requisição se ela não chegou a ser aplicada."}), 409
     payload = request.get_json(force=True)
     destino = payload.get("destino") if payload.get("destino") in ("pc", "disponivel") else "disponivel"
 

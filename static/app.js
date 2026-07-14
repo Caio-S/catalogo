@@ -346,13 +346,15 @@ document.addEventListener('keydown', e => {
 });
 
 function checkConsist(d) {
-  const cadastrados = aggsOf(d.id).length;
-  const saldoTotal = (d.sn || 0) + (d.pc || 0) + (d.sr || 0) + (d.em || 0);
-  if (!cadastrados && !saldoTotal) return null;
-  if (cadastrados !== saldoTotal) {
-    return `Saldo total (${saldoTotal}) diverge da quantidade de agregados cadastrados (${cadastrados}).`;
-  }
-  return null;
+  // sn/sr vêm do ERP (MariaDB); os agregados "Disponível novo/recond" são unidades
+  // rastreadas no app. Não dá pra somar as duas fontes — mas se houver MAIS agregados
+  // disponíveis do que o ERP registra, é sinal de cadastro em duplicidade (dupla contagem).
+  const novoAgg = aggsOf(d.id).filter(a => a.situacao === 'DISPONIVEL_NOVO').length;
+  const recondAgg = aggsOf(d.id).filter(a => a.situacao === 'DISPONIVEL_RECOND').length;
+  const avisos = [];
+  if (novoAgg > (d.sn || 0)) avisos.push(`${novoAgg} agregado(s) "Disponível novo" cadastrado(s), mas o ERP registra só ${d.sn || 0} novo(s) — verifique duplicidade.`);
+  if (recondAgg > (d.sr || 0)) avisos.push(`${recondAgg} agregado(s) "Disponível recond." cadastrado(s), mas o ERP registra só ${d.sr || 0} recond. — verifique duplicidade.`);
+  return avisos.length ? avisos.join(' ') : null;
 }
 
 function movHtml(m) {
@@ -1006,7 +1008,7 @@ function reqCard(r) {
     <div class="factions" style="margin-top:10px">
       ${r.entrega === 'PENDENTE' ? `<button class="btn" data-entrega="${r.id}">📦 Confirmar entrega</button>` : ''}
       ${r.status === 'APLICADO' && r.entrega === 'ENTREGUE' && cascoPendente(r) ? `<button class="btn amber" data-casco="${r.id}">🔩 Receber casco</button>` : ''}
-      ${r.status === 'APLICADO' ? `<button class="btn primary" data-devolver="${r.id}">↩ Devolver</button>` : ''}
+      ${r.status === 'APLICADO' && r.entrega === 'ENTREGUE' ? `<button class="btn primary" data-devolver="${r.id}">↩ Devolver</button>` : ''}
       ${can.delete() ? `<button class="btn danger" title="Excluir requisição" data-excluirreq="${r.id}">🗑</button>` : ''}
     </div>
   </div>`;

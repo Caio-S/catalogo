@@ -530,7 +530,8 @@ $('#btnSave').onclick = async () => {
     codNovo: isNaN(+cn) ? cn : +cn,
     codRec: cr === '' ? null : (isNaN(+cr) ? cr : +cr),
     ref: $('#f_ref').value.trim(),
-    sn: +$('#f_sn').value || 0, pc: +$('#f_pc').value || 0, sr: +$('#f_sr').value || 0,
+    // sn/sr (via banco) não são enviados: exclusivos da sincronização com o MariaDB
+    pc: +$('#f_pc').value || 0,
     em: +$('#f_em').value || 0, dv: +$('#f_dv').value || 0,
   };
   if (formImg) rec.foto = { b64: formImg, mime: formMime };

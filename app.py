@@ -82,7 +82,9 @@ def item_from_payload(payload, item=None):
     cr = payload.get("codRec")
     item.cod_rec = None if cr in (None, "") else str(cr)
     item.ref = (payload.get("ref") or "").strip()
-    for k in ("sn", "pc", "sr", "em", "dv"):
+    # sn/sr (saldo novo/recondicionado) NUNCA vêm do payload — são exclusivamente
+    # definidos pela sincronização com o MariaDB (apply_saldo_live/sync_mariadb.sync).
+    for k in ("pc", "em", "dv"):
         setattr(item, k, int(payload.get(k) or 0))
     foto = payload.get("foto")
     if foto:
@@ -100,10 +102,13 @@ def apply_saldo_live(item):
     except Exception as exc:
         print(f"[sync_mariadb] lookup ao salvar falhou: {exc}")
         return
-    if item.cod_novo and item.cod_novo in saldos:
-        item.sn = int(round(saldos[item.cod_novo]))
-    if item.cod_rec and item.cod_rec in saldos:
-        item.sr = int(round(saldos[item.cod_rec]))
+    # .get(cod, 0): se o código não aparece no resultado é porque o saldo é zero
+    # (SUM/GROUP BY não retorna linha pra quantidade zerada) — precisa zerar aqui também,
+    # não só quando o código está presente.
+    if item.cod_novo:
+        item.sn = int(round(saldos.get(item.cod_novo, 0)))
+    if item.cod_rec:
+        item.sr = int(round(saldos.get(item.cod_rec, 0)))
 
 
 def get_meta(key):

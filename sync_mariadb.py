@@ -123,13 +123,20 @@ def sync():
         items = Item.query.all()
         updated_sn = 0
         updated_sr = 0
+        # .get(cod, 0): um codigo ausente no resultado significa saldo zero
+        # (SUM/GROUP BY nao retorna linha pra quantidade zerada) — precisa zerar
+        # o item tambem nesse caso, nao so quando o codigo aparece com saldo > 0.
         for item in items:
-            if item.cod_novo and item.cod_novo in saldos:
-                item.sn = int(round(saldos[item.cod_novo]))
-                updated_sn += 1
-            if item.cod_rec and item.cod_rec in saldos:
-                item.sr = int(round(saldos[item.cod_rec]))
-                updated_sr += 1
+            if item.cod_novo:
+                novo = int(round(saldos.get(item.cod_novo, 0)))
+                if item.sn != novo:
+                    item.sn = novo
+                    updated_sn += 1
+            if item.cod_rec:
+                rec = int(round(saldos.get(item.cod_rec, 0)))
+                if item.sr != rec:
+                    item.sr = rec
+                    updated_sr += 1
 
         meta = db.session.get(Meta, "mariadb_sync_ts")
         if not meta:

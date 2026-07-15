@@ -549,7 +549,7 @@ def create_mov():
 
 
 @app.route("/api/movs/<mov_id>/retorno", methods=["POST"])
-@require_role(ROLE_ADMIN, ROLE_GESTOR, ROLE_ALMOXARIFADO)
+@require_role(ROLE_ADMIN, ROLE_GESTOR)
 def retornar_mov(mov_id):
     mov = Mov.query.get_or_404(mov_id)
     if mov.status == "RETORNADO":
@@ -726,11 +726,18 @@ def confirmar_entrega(req_id):
             agg.situacao = SIT_APLICADO
             agg.maquina = req.frota
     # …e o substituído sai da máquina como PENDENTE DE DEVOLUÇÃO (almoxarifado cobra o retorno)
-    if req.casco_fogo and req.casco_status == "PENDENTE":
-        sub = Aggregate.query.filter_by(fogo=req.casco_fogo).first()
-        if sub and sub.situacao in (SIT_APLICADO, SIT_PENDENTE_DEVOLUCAO):
-            sub.situacao = SIT_PENDENTE_DEVOLUCAO
-            sub.maquina = None
+    if req.casco_status == "PENDENTE":
+        if req.casco_fogo:
+            sub = Aggregate.query.filter_by(fogo=req.casco_fogo).first()
+            if sub and sub.situacao in (SIT_APLICADO, SIT_PENDENTE_DEVOLUCAO):
+                sub.situacao = SIT_PENDENTE_DEVOLUCAO
+                sub.maquina = None
+        else:
+            # casco sem cadastro: não há agregado pra mostrar a pendência, então
+            # marca no saldo "devendo" do solicitante até ele devolver
+            item = db.session.get(Item, req.item_id)
+            if item:
+                bump(item, "dv", 1)
 
     db.session.commit()
     return jsonify(req.to_dict())
@@ -776,9 +783,11 @@ def receber_casco(req_id):
                 )
             )
     else:
-        # casco sem cadastro: nao ha agregado pra rastrear, entao soma direto no saldo
+        # casco sem cadastro: resolve a pendencia de "devendo" marcada na entrega,
+        # e soma direto no saldo pc (nao ha agregado pra rastrear)
         item = db.session.get(Item, req.item_id)
         if item:
+            bump(item, "dv", -1)
             bump(item, "pc", 1)
 
     db.session.commit()
@@ -852,12 +861,18 @@ def cancelar_requisition(req_id):
             agg.situacao = req.origem_sit if req.origem_sit in (SIT_DISPONIVEL_NOVO, SIT_DISPONIVEL_RECOND) else SIT_DISPONIVEL_RECOND
             agg.maquina = None
 
-    # o agregado apontado como substituído e ainda pendente volta a Em Uso na máquina
-    if req.casco_status in ("PENDENTE", "NAO_DEVOLVIDO") and req.casco_fogo:
-        sub = Aggregate.query.filter_by(fogo=req.casco_fogo).first()
-        if sub and sub.situacao == SIT_PENDENTE_DEVOLUCAO:
-            sub.situacao = SIT_APLICADO
-            sub.maquina = req.frota
+    if req.casco_status in ("PENDENTE", "NAO_DEVOLVIDO"):
+        if req.casco_fogo:
+            # o agregado apontado como substituído e ainda pendente volta a Em Uso na máquina
+            sub = Aggregate.query.filter_by(fogo=req.casco_fogo).first()
+            if sub and sub.situacao == SIT_PENDENTE_DEVOLUCAO:
+                sub.situacao = SIT_APLICADO
+                sub.maquina = req.frota
+        elif req.entrega == "ENTREGUE":
+            # casco sem cadastro: reverte a marcação de "devendo" feita na entrega
+            item = db.session.get(Item, req.item_id)
+            if item:
+                bump(item, "dv", -1)
 
     db.session.delete(req)
     db.session.commit()

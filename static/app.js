@@ -178,7 +178,7 @@ function refreshKpis() {
     ['pc', 'P/ conserto', t('pc'), 'var(--amber)', 'aguardando envio'],
     ['sr', 'Saldo recond.', t('sr'), 'var(--green)', 'prontas para uso'],
     ['em', 'Em manutenção', t('em'), '#F07E3C', 'em recondicionamento'],
-    ['dv', 'Devendo', t('dv'), 'var(--red)', 'pendências de fornecedor'],
+    ['dv', 'Devendo', t('dv'), 'var(--red)', 'cascos devendo devolução (associados)'],
   ];
   $('#kpis').innerHTML = kpis.map(([k, l, v, c, s]) =>
     `<div class="kpi${state.f.has(k) ? ' on' : ''}" data-kpi="${k}" style="--k:${c}"><div class="lab">${l}</div><div class="val">${v}</div><div class="sub">${s}</div></div>`).join('');
@@ -397,7 +397,7 @@ function movHtml(m) {
   return `<div class="mov ${done ? 'done' : ''}">
     <div class="mrow">
       <div><b>${esc(m.fornecedor)}</b>${m.fogoAgg ? ` <span style="color:var(--mut);font-family:var(--mono)">· ${esc(m.fogoAgg)}</span>` : ''}</div>
-      ${done ? `<span style="color:var(--green)">RETORNADO ${br(m.dataRetorno)}</span>` : `<button class="btn primary" style="padding:5px 10px;font-size:12px" data-retorno="${m.id}">✔ Registrar retorno</button>`}
+      ${done ? `<span style="color:var(--green)">RETORNADO ${br(m.dataRetorno)}</span>` : (can.create() ? `<button class="btn primary" style="padding:5px 10px;font-size:12px" data-retorno="${m.id}">✔ Registrar retorno</button>` : '')}
     </div>
     <div class="mmeta">Enviado ${br(m.dataEnvio)} · qtd ${m.qtd}${m.previsaoRetorno ? ` · previsão ${br(m.previsaoRetorno)}` : ''}${!done && atrasado(m) ? ' <span class="late">· ATRASADO</span>' : ''}</div>
   </div>`;
@@ -1114,6 +1114,8 @@ async function excluirReq(reqId) { await guarded(async () => {
   } catch (e) { showBanner('err', 'Falha: ' + e.message, ''); }
 }); }
 function reqCard(r) {
+  // almoxarifado só age via a aba Almoxarifado; nas demais abas, só visualiza
+  const podeAgir = ME?.role !== 'almoxarifado' || state.view === 'alm';
   return `<div class="mrowcard ${r.status === 'DEVOLVIDO' ? 'done' : cascoPendente(r) ? 'late' : ''}">
     <div class="mtop">
       <div class="mpart">${r.fogoAgg ? `<span class="fogo">${esc(r.fogoAgg)}</span>` : ''}${esc(itemName(r.itemId))}</div>
@@ -1130,9 +1132,9 @@ function reqCard(r) {
     ${r.cascoStatus === 'NAO_DEVOLVIDO' ? `<div class="latebadge" style="display:inline-block;margin-top:6px">🔩 CASCO NÃO DEVOLVIDO</div><div class="mmeta">${br(r.dataCasco)} · ${esc(r.cascoEntreguePor || '–')}${r.cascoObs ? ' · ' + esc(r.cascoObs) : ''}</div>` : ''}
     ${r.cascoStatus === 'DEVOLVIDO' ? `<div class="mmeta" style="margin-top:6px">Casco entregue por <b>${esc(r.cascoEntreguePor || '–')}</b> · conf. <b>${esc(r.cascoRecebidoPor || '–')}</b> · ${br(r.dataCasco)}</div>` : ''}
     <div class="factions" style="margin-top:10px">
-      ${r.entrega === 'PENDENTE' ? `<button class="btn" data-entrega="${r.id}">📦 Confirmar entrega</button>` : ''}
-      ${r.status === 'APLICADO' && r.entrega === 'ENTREGUE' && cascoPendente(r) ? `<button class="btn amber" data-casco="${r.id}">🔩 Receber casco</button>` : ''}
-      ${r.status === 'APLICADO' ? `<button class="btn primary" data-devolver="${r.id}">↩ Devolver</button>` : ''}
+      ${r.entrega === 'PENDENTE' && podeAgir ? `<button class="btn" data-entrega="${r.id}">📦 Confirmar entrega</button>` : ''}
+      ${r.status === 'APLICADO' && r.entrega === 'ENTREGUE' && cascoPendente(r) && podeAgir ? `<button class="btn amber" data-casco="${r.id}">🔩 Receber casco</button>` : ''}
+      ${r.status === 'APLICADO' && podeAgir ? `<button class="btn primary" data-devolver="${r.id}">↩ Devolver</button>` : ''}
       ${can.delete() ? `<button class="btn danger" title="Excluir requisição" data-excluirreq="${r.id}">🗑</button>` : ''}
     </div>
   </div>`;

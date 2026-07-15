@@ -278,6 +278,7 @@ kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2p
 .rrow.rlink:hover{background:#232B30;border-radius:6px}
 
 .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--green);border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px;margin-right:8px}
+.btn .spin{width:12px;height:12px;border-color:currentColor;border-top-color:transparent;opacity:.85;margin-right:7px}
 @keyframes sp{to{transform:rotate(360deg)}}
 
 /* =============== impressao =============== */
@@ -330,5 +331,18 @@ kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2p
 .empty b{color:var(--txt)}
 .loading{text-align:center;color:var(--mut);padding:70px 0;font-size:14px;font-family:var(--mono)}
 footer{border-top:1px solid var(--line);color:var(--mut);font-size:11.5px;text-align:center;padding:18px;font-family:var(--mono)}
-@media(max-width:700px){ header{padding:20px 16px 14px} .tools{padding:12px 16px} main{padding:0 16px} .kpis{padding:0 16px} .fgrid{grid-template-columns:1fr} .nums{grid-template-columns:repeat(3,1fr)} }
+@media(max-width:700px){
+  header{padding:20px 16px 14px} .tools{padding:12px 16px} main{padding:0 16px} .kpis{padding:0 16px}
+  .fgrid{grid-template-columns:1fr} .nums{grid-template-columns:repeat(3,1fr)}
+  /* ===== ergonomia de toque (celular/tablet estreito) ===== */
+  .btn{padding:12px 16px;font-size:14px}
+  .chip{padding:11px 16px}
+  .mtab{padding:10px 16px}
+  .fx{width:40px;height:40px;font-size:18px}
+  .factions,.formbtns{flex-direction:column}
+  .factions .btn,.formbtns .btn{width:100%;text-align:center}
+  .fsaldos{grid-template-columns:repeat(3,1fr);gap:6px}
+  .fmeta{grid-template-columns:1fr}
+  .msubitem{padding:11px 12px;font-size:13px}
+}
 @media (prefers-reduced-motion: reduce){ *{animation:none!important;transition:none!important} }

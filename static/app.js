@@ -83,8 +83,24 @@ function uiDialog(opt) {
 }
 const uiConfirm = (msg, opt) => uiDialog(Object.assign({ msg }, opt || {}));
 const uiPrompt = (msg, def, opt) => uiDialog(Object.assign({ msg, input: true, def }, opt || {}));
+function setBtnLoading(btn, loading) {
+  if (!btn) return;
+  if (loading) {
+    if (btn.dataset.label === undefined) btn.dataset.label = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>' + btn.dataset.label;
+  } else {
+    btn.disabled = false;
+    if (btn.dataset.label !== undefined) { btn.innerHTML = btn.dataset.label; delete btn.dataset.label; }
+  }
+}
 let busyAction = false;
-async function guarded(fn) { if (busyAction) return; busyAction = true; try { await fn(); } finally { busyAction = false; } }
+async function guarded(fn, btn) {
+  if (busyAction) return;
+  busyAction = true;
+  setBtnLoading(btn, true);
+  try { await fn(); } finally { busyAction = false; setBtnLoading(btn, false); }
+}
 
 async function loadAll() {
   const [items, aggs, movs, reqs] = await Promise.all([
@@ -432,20 +448,20 @@ function openFicha(id) {
       <div>${chips}</div>
       ${movsHist.length ? `<div class="sect">Agregado no fornecedor</div>${movsHist.map(movHtml).join('')}` : ''}
       <div class="factions">
-        ${can.delete() ? '<button class="btn danger" id="btnDel">🗑 Excluir</button>' : ''}
         ${can.create() ? '<button class="btn amber" id="btnEnviarForn">🔧 Enviar p/ fornecedor</button>' : ''}
         ${can.create() ? '<button class="btn" id="btnNovoAgg">🏷️ Cadastrar agregado</button>' : ''}
         ${can.create() ? '<button class="btn primary" id="btnEdit">✎ Editar</button>' : ''}
+        ${can.delete() ? '<button class="btn danger" id="btnDel">🗑 Excluir</button>' : ''}
       </div>
     </div>`;
   $('#ov').classList.add('open');
-  $('#btnDel') && ($('#btnDel').onclick = () => delItem(id));
+  $('#btnDel') && ($('#btnDel').onclick = () => delItem(id, $('#btnDel')));
   $('#btnEdit') && ($('#btnEdit').onclick = () => { $('#ov').classList.remove('open'); openForm(id); });
   $('#btnEnviarForn') && ($('#btnEnviarForn').onclick = () => { $('#ov').classList.remove('open'); openEnvio(id); });
   $('#btnNovoAgg') && ($('#btnNovoAgg').onclick = () => { $('#ov').classList.remove('open'); openAggForm(null, id); });
-  $('#ficha [data-retorno]').forEach(btn => btn.onclick = () => registrarRetorno(btn.dataset.retorno));
+  $('#ficha').querySelectorAll('[data-retorno]').forEach(btn => btn.onclick = () => registrarRetorno(btn.dataset.retorno, btn));
 }
-async function delItem(id) { await guarded(async () => {
+async function delItem(id, btn) { await guarded(async () => {
   const d = byId(id);
   if (!await uiConfirm(`Excluir a peça "${d.desc}"?`, { title: 'Excluir peça', danger: true, okLabel: 'Excluir' })) return;
   try {
@@ -455,7 +471,7 @@ async function delItem(id) { await guarded(async () => {
     $('#ov').classList.remove('open');
     showBanner('ok', `Peça excluída: ${d.desc}`, '');
   } catch (err) { showBanner('err', 'Falha ao excluir: ' + err.message, ''); }
-}); }
+}, btn); }
 
 /* =============== formulário de peça =============== */
 let formImg = null, formMime = null, editId = null;
@@ -538,7 +554,7 @@ $('#btnSave').onclick = async () => {
     em: +$('#f_em').value || 0, dv: +$('#f_dv').value || 0,
   };
   if (formImg) rec.foto = { b64: formImg, mime: formMime };
-  $('#btnSave').disabled = true;
+  setBtnLoading($('#btnSave'), true);
   try {
     let saved;
     if (editId) {
@@ -553,7 +569,7 @@ $('#btnSave').onclick = async () => {
     refreshKpis(); updateNav(); render();
     $('#ov2').classList.remove('open');
   } catch (e2) { return err(e2.message); }
-  finally { $('#btnSave').disabled = false; }
+  finally { setBtnLoading($('#btnSave'), false); }
 };
 
 /* =============== modulo: agregados =============== */
@@ -634,7 +650,7 @@ $('#btnAgg').onclick = async () => {
     else payload.fogo = num;
   }
   const fogo = editing ? AGGS.find(a => a.id === id).fogo : (prefixo ? `${prefixo}-${num.padStart(3, '0')}` : num);
-  $('#btnAgg').disabled = true;
+  setBtnLoading($('#btnAgg'), true);
   try {
     let saved;
     if (id) { saved = await api(`/aggregates/${id}`, { method: 'PUT', body: JSON.stringify(payload) }); Object.assign(AGGS.find(a => a.id === id), saved); }
@@ -643,7 +659,7 @@ $('#btnAgg').onclick = async () => {
     $('#ov4').classList.remove('open');
     showBanner('ok', `Agregado ${fogo} salvo.`, '');
   } catch (e) { return err(e.message); }
-  finally { $('#btnAgg').disabled = false; }
+  finally { setBtnLoading($('#btnAgg'), false); }
 };
 async function delAgg(id) { await guarded(async () => {
   const a = AGGS.find(x => x.id === id); if (!a) return;
@@ -690,9 +706,9 @@ function openAggFicha(fogo) {
       <div class="sect">Linha do tempo</div>
       ${eventos.length ? eventos.map(e => `<div class="mov"><div class="mrow"><div>${esc(e.txt)}</div><div class="mmeta">${br(e.data)}</div></div></div>`).join('') : '<span style="color:var(--mut);font-size:12px">Sem eventos registrados.</span>'}
       <div class="factions">
-        ${can.delete() ? '<button class="btn danger" id="btnDelAgg">🗑 Excluir</button>' : ''}
         ${can.create() && ['DISPONIVEL_NOVO', 'DISPONIVEL_RECOND'].includes(a.situacao) ? '<button class="btn amber" id="btnReqAgg">🚜 Requisitar</button>' : ''}
         ${can.create() ? '<button class="btn primary" id="btnEditAgg">✎ Editar</button>' : ''}
+        ${can.delete() ? '<button class="btn danger" id="btnDelAgg">🗑 Excluir</button>' : ''}
       </div>
     </div>`;
   $('#ov').classList.add('open');
@@ -771,7 +787,7 @@ $('#btnEnvio').onclick = async () => {
     registradoPor: op,
   };
   const checked = [...$('#e_agglist').querySelectorAll('input:checked')].map(c => c.value);
-  $('#btnEnvio').disabled = true;
+  setBtnLoading($('#btnEnvio'), true);
   try {
     if (checked.length) {
       for (const fogo of checked) {
@@ -791,9 +807,9 @@ $('#btnEnvio').onclick = async () => {
     $('#ov3').classList.remove('open');
     showBanner('ok', `Envio registrado: ${fornecedor}.`, '');
   } catch (e) { return err(e.message); }
-  finally { $('#btnEnvio').disabled = false; }
+  finally { setBtnLoading($('#btnEnvio'), false); }
 };
-async function registrarRetorno(movId) { await guarded(async () => {
+async function registrarRetorno(movId, btn) { await guarded(async () => {
   if (!await uiConfirm('Confirmar retorno deste envio?', { title: 'Retorno do fornecedor', okLabel: 'Registrar retorno' })) return;
   const nfDevolucao = (await uiPrompt('Nota de devolução (opcional):', '', { title: 'NF de devolução', okLabel: 'Salvar' })) || '';
   try {
@@ -805,7 +821,7 @@ async function registrarRetorno(movId) { await guarded(async () => {
     $('#ov').classList.remove('open');
     showBanner('ok', 'Retorno registrado.', '');
   } catch (e) { showBanner('err', 'Falha: ' + e.message, ''); }
-}); }
+}, btn); }
 function openDocs(movId) {
   const m = MOVS.find(x => x.id === movId); if (!m) return;
   $('#d_solorc').value = m.solicitacaoOrc || '';
@@ -883,7 +899,7 @@ function openMovDetail(movId) {
   $('#ov').classList.add('open');
   $('#btnDocsFicha') && ($('#btnDocsFicha').onclick = () => { $('#ov').classList.remove('open'); openDocs(m.id); });
   $('#btnPeritFicha').onclick = () => printPeritagem(m.id);
-  $('#btnRetFicha') && ($('#btnRetFicha').onclick = () => registrarRetorno(m.id));
+  $('#btnRetFicha') && ($('#btnRetFicha').onclick = () => registrarRetorno(m.id, $('#btnRetFicha')));
 }
 function etapasChips(m) {
   const steps = [
@@ -989,7 +1005,7 @@ $('#btnReq').onclick = async () => {
     cascoStatus: subVal === '__semcadastro__' ? 'PENDENTE' : null,
     cascoFunc: temCasco ? solicitante : null,
   };
-  $('#btnReq').disabled = true;
+  setBtnLoading($('#btnReq'), true);
   try {
     const saved = await api('/requisitions', { method: 'POST', body: JSON.stringify(payload) });
     REQS.push(saved);
@@ -998,9 +1014,9 @@ $('#btnReq').onclick = async () => {
     $('#ov5').classList.remove('open');
     showBanner('ok', `Requisição criada para ${frota}: ${fogo} separado, aguardando confirmação de entrega do almoxarifado.${saved.cascoFogo ? ' Substituirá o ' + saved.cascoFogo + '.' : ''}`, '');
   } catch (e) { return err(e.message); }
-  finally { $('#btnReq').disabled = false; }
+  finally { setBtnLoading($('#btnReq'), false); }
 };
-async function confirmarEntrega(reqId) { await guarded(async () => {
+async function confirmarEntrega(reqId, btn) { await guarded(async () => {
   const r0 = REQS.find(r => r.id === reqId);
   if (!await uiConfirm(`Confirmar a ENTREGA do agregado ${r0?.fogoAgg || ''} para a frota ${r0?.frota || ''}?` +
     (r0?.cascoFogo ? `\n\nO agregado ${r0.cascoFogo} sai do equipamento e fica PENDENTE DE DEVOLUÇÃO.` : ''),
@@ -1013,7 +1029,7 @@ async function confirmarEntrega(reqId) { await guarded(async () => {
     showBanner('ok', `Entrega confirmada: ${saved.fogoAgg || 'agregado'} em uso na frota ${saved.frota}.` +
       (saved.cascoFogo && saved.cascoStatus === 'PENDENTE' ? ` ${saved.cascoFogo} pendente de devolução (${saved.cascoFunc || 'cobrar'}).` : ''), '');
   } catch (e) { showBanner('err', 'Falha: ' + e.message, ''); }
-}); }
+}, btn); }
 function syncCascoEntregue() {
   const naoEntregue = $('#c_entregue').value === 'N';
   $('#c_fogo').disabled = naoEntregue;
@@ -1067,7 +1083,7 @@ $('#btnSaveCasco').onclick = async () => {
   if (entregue === 'N') cascoFogo = '';
 
   const payload = { entregue, data, quem, cascoFogo, obs: $('#c_obs').value.trim(), cascoRecebidoPor: await ensureOperator() };
-  $('#btnSaveCasco').disabled = true;
+  setBtnLoading($('#btnSaveCasco'), true);
   try {
     const saved = await api(`/requisitions/${cascoReqId}/casco`, { method: 'POST', body: JSON.stringify(payload) });
     Object.assign(REQS.find(x => x.id === cascoReqId), saved);
@@ -1080,9 +1096,9 @@ $('#btnSaveCasco').onclick = async () => {
         ? `Casco recebido${cascoFogo ? ` · agregado ${cascoFogo} liberado para manutenção (P/ Conserto)` : ' → saldo P/ Conserto'}.`
         : `Registrado: casco NÃO devolvido (responsável: ${quem}).`, '');
   } catch (e) { return err(e.message); }
-  finally { $('#btnSaveCasco').disabled = false; }
+  finally { setBtnLoading($('#btnSaveCasco'), false); }
 };
-async function devolverReq(reqId) { await guarded(async () => {
+async function devolverReq(reqId, btn) { await guarded(async () => {
   const destino = await uiConfirm('A peça devolvida precisa de conserto?\nOK = vai para P/ Conserto · Cancelar = fica disponível', { title: 'Devolução da frota', okLabel: 'Precisa de conserto' }) ? 'pc' : 'disponivel';
   try {
     const saved = await api(`/requisitions/${reqId}/devolucao`, { method: 'POST', body: JSON.stringify({ destino, registradoPor: await ensureOperator() }) });
@@ -1092,8 +1108,8 @@ async function devolverReq(reqId) { await guarded(async () => {
     refreshKpis(); updateNav(); render();
     showBanner('ok', 'Requisição devolvida.', '');
   } catch (e) { showBanner('err', 'Falha: ' + e.message, ''); }
-}); }
-async function excluirReq(reqId) { await guarded(async () => {
+}, btn); }
+async function excluirReq(reqId, btn) { await guarded(async () => {
   const r = REQS.find(x => x.id === reqId); if (!r) return;
   let msg;
   if (r.cascoStatus === 'DEVOLVIDO') {
@@ -1112,7 +1128,7 @@ async function excluirReq(reqId) { await guarded(async () => {
     updateNav(); render();
     showBanner('ok', `Requisição excluída: ${itemName(r.itemId)} · ${r.frota}.`, '');
   } catch (e) { showBanner('err', 'Falha: ' + e.message, ''); }
-}); }
+}, btn); }
 function reqCard(r) {
   // almoxarifado só age via a aba Almoxarifado; nas demais abas, só visualiza
   const podeAgir = ME?.role !== 'almoxarifado' || state.view === 'alm';
@@ -1140,10 +1156,10 @@ function reqCard(r) {
   </div>`;
 }
 function wireReqCardButtons() {
-  $('#main').querySelectorAll('[data-entrega]').forEach(b => b.onclick = () => confirmarEntrega(b.dataset.entrega));
+  $('#main').querySelectorAll('[data-entrega]').forEach(b => b.onclick = () => confirmarEntrega(b.dataset.entrega, b));
   $('#main').querySelectorAll('[data-casco]').forEach(b => b.onclick = () => receberCasco(b.dataset.casco));
-  $('#main').querySelectorAll('[data-devolver]').forEach(b => b.onclick = () => devolverReq(b.dataset.devolver));
-  $('#main').querySelectorAll('[data-excluirreq]').forEach(b => b.onclick = () => excluirReq(b.dataset.excluirreq));
+  $('#main').querySelectorAll('[data-devolver]').forEach(b => b.onclick = () => devolverReq(b.dataset.devolver, b));
+  $('#main').querySelectorAll('[data-excluirreq]').forEach(b => b.onclick = () => excluirReq(b.dataset.excluirreq, b));
 }
 function renderReqs() {
   let list = state.q ? REQS.filter(r => r.frota.toLowerCase().includes(state.q) || itemName(r.itemId).toLowerCase().includes(state.q)) : REQS;
@@ -1309,7 +1325,7 @@ $('#btnUser').onclick = async () => {
   const payload = { name, role: $('#u_role').value, ativo: $('#u_ativo').value === '1' };
   if (!id) payload.username = username;
   if (password) payload.password = password;
-  $('#btnUser').disabled = true;
+  setBtnLoading($('#btnUser'), true);
   try {
     let saved;
     if (id) { saved = await api(`/users/${id}`, { method: 'PUT', body: JSON.stringify(payload) }); Object.assign(USERS.find(u => u.id === id), saved); }
@@ -1318,9 +1334,9 @@ $('#btnUser').onclick = async () => {
     $('#ov8').classList.remove('open');
     showBanner('ok', `Usuário ${saved.name} salvo.`, '');
   } catch (e) { return err(e.message); }
-  finally { $('#btnUser').disabled = false; }
+  finally { setBtnLoading($('#btnUser'), false); }
 };
-async function deleteUser(userId) { await guarded(async () => {
+async function deleteUser(userId, btn) { await guarded(async () => {
   const u = USERS.find(x => x.id === userId); if (!u) return;
   if (!await uiConfirm(`Excluir o usuário ${u.name}?`, { title: 'Excluir usuário', danger: true, okLabel: 'Excluir' })) return;
   try {
@@ -1329,7 +1345,7 @@ async function deleteUser(userId) { await guarded(async () => {
     updateNav(); render();
     showBanner('ok', `Usuário ${u.name} excluído.`, '');
   } catch (e) { showBanner('err', 'Falha: ' + e.message, ''); }
-}); }
+}, btn); }
 function userCard(u) {
   return `<div class="mrowcard ${u.ativo ? '' : 'done'}">
     <div class="mtop">
@@ -1358,7 +1374,7 @@ function renderUsers() {
   $('#cnt').innerHTML = `<b>${list.length}</b> usuários`;
   $('#main').innerHTML = list.length ? list.map(userCard).join('') : `<div class="empty">Nenhum usuário cadastrado.</div>`;
   $('#main').querySelectorAll('[data-edituser]').forEach(b => b.onclick = () => openUserForm(b.dataset.edituser));
-  $('#main').querySelectorAll('[data-deluser]').forEach(b => b.onclick = () => deleteUser(b.dataset.deluser));
+  $('#main').querySelectorAll('[data-deluser]').forEach(b => b.onclick = () => deleteUser(b.dataset.deluser, b));
 }
 
 /* =============== exportar Excel =============== */

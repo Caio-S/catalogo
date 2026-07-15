@@ -42,7 +42,12 @@ elif db_url.startswith("postgresql://"):
     db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
-app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True}
+# pool pequeno de propósito: o pooler do Supabase (modo session) limita a 15 conexões
+# simultâneas no total. Sem isso, uma única instância (pool_size=5 + overflow=10 por
+# padrão do SQLAlchemy) já toma o limite inteiro sozinha, e qualquer outra conexão
+# (deploy antigo ainda de saída, script local, etc.) derruba a aplicação com
+# "max clients reached in session mode".
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True, "pool_size": 3, "max_overflow": 2, "pool_recycle": 300}
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev")
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=14)
 

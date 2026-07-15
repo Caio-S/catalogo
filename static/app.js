@@ -877,7 +877,7 @@ function openMovDetail(movId) {
       <div class="factions">
         ${can.create() ? '<button class="btn" id="btnDocsFicha">📄 Docs</button>' : ''}
         <button class="btn" id="btnPeritFicha">🖨 Peritagem</button>
-        ${m.status === 'NO_FORNECEDOR' ? '<button class="btn primary" id="btnRetFicha">✔ Registrar retorno</button>' : ''}
+        ${m.status === 'NO_FORNECEDOR' && can.create() ? '<button class="btn primary" id="btnRetFicha">✔ Registrar retorno</button>' : ''}
       </div>
     </div>`;
   $('#ov').classList.add('open');

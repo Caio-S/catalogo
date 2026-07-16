@@ -16,6 +16,7 @@ from models import (
     SIT_APLICADO,
     SIT_DISPONIVEL_NOVO,
     SIT_DISPONIVEL_RECOND,
+    SIT_MANUTENCAO_INTERNA,
     SIT_NO_FORNECEDOR,
     SIT_P_CONSERTO,
     SIT_PENDENTE_DEVOLUCAO,
@@ -379,9 +380,9 @@ def list_aggregates():
     return jsonify([a.to_dict() for a in aggs])
 
 
-# Regra 1 — no cadastro se admite: Novo, Recondicionado p/ uso, Em uso em equipamento ou P/ Conserto.
-# (RESERVADO/PENDENTE_DEVOLUCAO nascem só do fluxo de requisição.)
-CADASTRO_SITUACOES = {SIT_DISPONIVEL_NOVO, SIT_DISPONIVEL_RECOND, SIT_APLICADO, SIT_P_CONSERTO}
+# Regra 1 — no cadastro se admite: Novo, Recondicionado p/ uso, Em uso em equipamento,
+# P/ Conserto ou Manutenção interna. (RESERVADO/PENDENTE_DEVOLUCAO nascem só do fluxo de requisição.)
+CADASTRO_SITUACOES = {SIT_DISPONIVEL_NOVO, SIT_DISPONIVEL_RECOND, SIT_APLICADO, SIT_P_CONSERTO, SIT_MANUTENCAO_INTERNA}
 
 
 @app.route("/api/aggregates", methods=["POST"])
@@ -412,7 +413,7 @@ def create_aggregate():
 
     situacao = payload.get("situacao") or SIT_DISPONIVEL_NOVO
     if situacao not in CADASTRO_SITUACOES:
-        return jsonify({"error": "No cadastro, a situação deve ser Novo, Recondicionado p/ uso, Em uso em equipamento ou P/ Conserto."}), 400
+        return jsonify({"error": "No cadastro, a situação deve ser Novo, Recondicionado p/ uso, Em uso em equipamento, P/ Conserto ou Manutenção interna."}), 400
 
     # Regra 2 — com equipamento: informar a máquina é obrigatório e o agregado nasce Em Uso vinculado
     maquina = (payload.get("maquina") or "").strip()

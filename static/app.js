@@ -174,13 +174,13 @@ async function ensureOperator() {
 /* =============== situacao de agregado =============== */
 const SIT_LABEL = {
   DISPONIVEL_NOVO: 'Disponível novo', DISPONIVEL_RECOND: 'Disponível recond.',
-  P_CONSERTO: 'P/ conserto', NO_FORNECEDOR: 'No fornecedor',
+  P_CONSERTO: 'P/ conserto', NO_FORNECEDOR: 'No fornecedor', MANUTENCAO_INTERNA: 'Manutenção interna',
   APLICADO: 'Em uso na máquina', BAIXADO: 'Baixado',
   RESERVADO: 'Separado p/ entrega', PENDENTE_DEVOLUCAO: 'Pendente de devolução',
 };
 const SIT_CLS = {
   DISPONIVEL_NOVO: 'sit-dn', DISPONIVEL_RECOND: 'sit-dr',
-  P_CONSERTO: 'sit-pc', NO_FORNECEDOR: 'sit-nf',
+  P_CONSERTO: 'sit-pc', NO_FORNECEDOR: 'sit-nf', MANUTENCAO_INTERNA: 'sit-mi',
   APLICADO: 'sit-am', BAIXADO: 'sit-bx',
   RESERVADO: 'sit-rs', PENDENTE_DEVOLUCAO: 'sit-pd',
 };
@@ -599,8 +599,9 @@ function openAggForm(aggId, prefillItemId) {
   const baseOpts = `<option value="DISPONIVEL_NOVO">Novo — disponível para requisição</option>
     <option value="DISPONIVEL_RECOND">Recondicionado para uso</option>
     <option value="APLICADO">Em uso em equipamento</option>
-    <option value="P_CONSERTO">P/ Conserto</option>`;
-  const extra = a && !['DISPONIVEL_NOVO', 'DISPONIVEL_RECOND', 'APLICADO', 'P_CONSERTO'].includes(a.situacao)
+    <option value="P_CONSERTO">P/ Conserto</option>
+    <option value="MANUTENCAO_INTERNA">Manutenção interna</option>`;
+  const extra = a && !['DISPONIVEL_NOVO', 'DISPONIVEL_RECOND', 'APLICADO', 'P_CONSERTO', 'MANUTENCAO_INTERNA'].includes(a.situacao)
     ? `<option value="${a.situacao}">${SIT_LABEL[a.situacao] || a.situacao}</option>` : '';
   $('#g_sit').innerHTML = baseOpts + extra;
   $('#g_sit').value = a ? a.situacao : 'DISPONIVEL_NOVO';
@@ -728,7 +729,7 @@ function aggCard(a) {
   </div>`;
 }
 function renderAggs() {
-  const sits = ['DISPONIVEL_NOVO', 'DISPONIVEL_RECOND', 'RESERVADO', 'APLICADO', 'PENDENTE_DEVOLUCAO', 'P_CONSERTO', 'NO_FORNECEDOR', 'BAIXADO'];
+  const sits = ['DISPONIVEL_NOVO', 'DISPONIVEL_RECOND', 'RESERVADO', 'APLICADO', 'PENDENTE_DEVOLUCAO', 'P_CONSERTO', 'NO_FORNECEDOR', 'MANUTENCAO_INTERNA', 'BAIXADO'];
   const tabs = sits.map(s => `<span class="mtab ${state.gtab === s ? 'on' : ''}" data-gtab="${s}">${SIT_LABEL[s]} · ${AGGS.filter(a => a.situacao === s).length}</span>`).join('');
   let list = AGGS.filter(a => a.situacao === state.gtab);
   if (state.q) list = list.filter(a => a.fogo.toLowerCase().includes(state.q) || itemName(a.itemId).toLowerCase().includes(state.q));
@@ -1037,7 +1038,7 @@ function syncCascoEntregue() {
 }
 $('#c_entregue').addEventListener('change', syncCascoEntregue);
 function fillCascoFogoOptions(r) {
-  const cand = aggsOf(r.itemId).filter(g => g.fogo !== r.fogoAgg && !['NO_FORNECEDOR', 'P_CONSERTO', 'BAIXADO', 'RESERVADO'].includes(g.situacao));
+  const cand = aggsOf(r.itemId).filter(g => g.fogo !== r.fogoAgg && !['NO_FORNECEDOR', 'P_CONSERTO', 'MANUTENCAO_INTERNA', 'BAIXADO', 'RESERVADO'].includes(g.situacao));
   $('#c_fogo').innerHTML =
     '<option value="">— casco sem cadastro (lança só no saldo P/ Conserto) —</option>' +
     cand.map(g => `<option value="${esc(g.fogo)}">${esc(g.fogo)} · ${esc(SIT_LABEL[g.situacao] || g.situacao)}${g.maquina ? ' · ' + esc(g.maquina) : ''}</option>`).join('') +

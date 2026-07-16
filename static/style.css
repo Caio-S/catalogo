@@ -294,6 +294,7 @@ kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2p
 .et.on{background:var(--amber);border-color:transparent;color:#241800}
 .sit-rs{background:#1B2A3A;color:#8FC1EE;border-color:#2E4A66}
 .sit-pd{background:#3A2418;color:#F0A878;border-color:#6B4226}
+.sit-mi{background:#2A1E3A;color:#C7A6F0;border-color:#4A3566}
 @media print{
   body.per-mode header, body.per-mode nav, body.per-mode .mods, body.per-mode .hotkeys,
   body.per-mode .tools, body.per-mode .banner, body.per-mode main, body.per-mode footer{display:none!important}

@@ -684,7 +684,9 @@ def create_requisition():
         casco_status = "PENDENTE"
         casco_fogo = substituir
     elif payload.get("cascoStatus") == "PENDENTE":
-        casco_status = "PENDENTE"  # casco antigo sem cadastro de nº de fogo
+        casco_status = "PENDENTE"
+        # casco antigo não cadastrado como agregado; pode vir com ou sem nº de fogo informado
+        casco_fogo = (payload.get("cascoFogoManual") or "").strip().upper() or None
 
     req = Req(
         id=new_id("r"),

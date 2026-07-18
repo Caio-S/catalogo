@@ -961,7 +961,14 @@ function fillSubstituirOptions() {
   $('#q_substituir').innerHTML =
     '<option value="">— nenhum (primeira montagem) —</option>' +
     emUso.map(a => `<option value="${esc(a.fogo)}">${esc(a.fogo)} · ${esc(itemName(a.itemId))}${a.maquina ? ' · ' + esc(a.maquina) : ''}</option>`).join('') +
+    '<option value="__comfogo__">Casco antigo com nº de fogo (não cadastrado)</option>' +
     '<option value="__semcadastro__">Casco antigo sem cadastro (sem nº de fogo)</option>';
+  syncFogoManual();
+}
+function syncFogoManual() {
+  const show = $('#q_substituir').value === '__comfogo__';
+  $('#q_fogomanual_wrap').style.display = show ? '' : 'none';
+  if (!show) $('#q_fogomanual').value = '';
 }
 function openReqForm(prefillFogo) {
   fillAggSelect($('#q_agg'));
@@ -971,6 +978,7 @@ function openReqForm(prefillFogo) {
   fillSubstituirOptions();
   $('#q_agg').onchange = fillSubstituirOptions;
   $('#q_frota').oninput = fillSubstituirOptions;
+  $('#q_substituir').onchange = syncFogoManual;
   $('#q_obs').value = '';
   $('#qerr').style.display = 'none';
   $('#ov5').classList.add('open');
@@ -997,13 +1005,19 @@ $('#btnReq').onclick = async () => {
   const subVal = $('#q_substituir').value;
   const temCasco = !!subVal;
   if (temCasco && !solicitante) return err('Informe o funcionário responsável pela devolução do casco.');
+  const isComFogo = subVal === '__comfogo__';
+  const isSemFogo = subVal === '__semcadastro__';
+  const isRegistrado = subVal && !isComFogo && !isSemFogo;
+  const fogoManual = $('#q_fogomanual').value.trim().toUpperCase();
+  if (isComFogo && !fogoManual) return err('Informe o número de fogo do casco antigo.');
   const agg = aggByFogo(fogo);
   const payload = {
     itemId: agg.itemId, fogoAgg: fogo, frota,
     solicitante, obs: $('#q_obs').value.trim(),
     dataReq: todayISO(), registradoPor: ensureOperator(),
-    substituirFogo: (subVal && subVal !== '__semcadastro__') ? subVal : null,
-    cascoStatus: subVal === '__semcadastro__' ? 'PENDENTE' : null,
+    substituirFogo: isRegistrado ? subVal : null,
+    cascoStatus: (isSemFogo || isComFogo) ? 'PENDENTE' : null,
+    cascoFogoManual: isComFogo ? fogoManual : null,
     cascoFunc: temCasco ? solicitante : null,
   };
   setBtnLoading($('#btnReq'), true);

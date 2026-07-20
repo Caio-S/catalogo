@@ -895,13 +895,26 @@ function openMovDetail(movId) {
         ${can.create() ? '<button class="btn" id="btnDocsFicha">📄 Docs</button>' : ''}
         <button class="btn" id="btnPeritFicha">🖨 Peritagem</button>
         ${m.status === 'NO_FORNECEDOR' && can.create() ? '<button class="btn primary" id="btnRetFicha">✔ Registrar retorno</button>' : ''}
+        ${m.status === 'RETORNADO' && can.delete() ? '<button class="btn danger" id="btnDelMovFicha">🗑 Excluir</button>' : ''}
       </div>
     </div>`;
   $('#ov').classList.add('open');
   $('#btnDocsFicha') && ($('#btnDocsFicha').onclick = () => { $('#ov').classList.remove('open'); openDocs(m.id); });
   $('#btnPeritFicha').onclick = () => printPeritagem(m.id);
   $('#btnRetFicha') && ($('#btnRetFicha').onclick = () => registrarRetorno(m.id, $('#btnRetFicha')));
+  $('#btnDelMovFicha') && ($('#btnDelMovFicha').onclick = () => excluirMov(m.id, $('#btnDelMovFicha')));
 }
+async function excluirMov(movId, btn) { await guarded(async () => {
+  const m = MOVS.find(x => x.id === movId); if (!m) return;
+  if (!await uiConfirm(`Excluir este envio (${itemName(m.itemId)} · ${m.fornecedor})? O histórico será removido, mas a situação do agregado e os saldos permanecem como estão hoje — não voltam ao estado anterior ao envio.`, { title: 'Excluir envio', danger: true, okLabel: 'Excluir' })) return;
+  try {
+    await api(`/movs/${movId}`, { method: 'DELETE' });
+    MOVS = MOVS.filter(x => x.id !== movId);
+    updateNav(); render();
+    $('#ov').classList.remove('open');
+    showBanner('ok', `Envio excluído: ${itemName(m.itemId)} · ${m.fornecedor}.`, '');
+  } catch (e) { showBanner('err', 'Falha: ' + e.message, ''); }
+}, btn); }
 function etapasChips(m) {
   const steps = [
     ['Solic. Orç.', m.solicitacaoOrc], ['Orçamento', m.orcamento], ['Pedido', m.pedidoCompra],

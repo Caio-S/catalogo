@@ -600,6 +600,19 @@ def update_mov_docs(mov_id):
     return jsonify(mov.to_dict())
 
 
+@app.route("/api/movs/<mov_id>", methods=["DELETE"])
+@require_role(ROLE_ADMIN)
+def delete_mov(mov_id):
+    mov = Mov.query.get_or_404(mov_id)
+    if mov.status != "RETORNADO":
+        return jsonify({"error": "Só é possível excluir envios já retornados. Registre o retorno antes de excluir."}), 409
+    # exclusão remove só o histórico: a situação do agregado e os saldos, já
+    # atualizados no retorno, não são revertidos ao estado anterior ao envio.
+    db.session.delete(mov)
+    db.session.commit()
+    return "", 204
+
+
 # =============== requisicoes (aplicacao de agregado na frota) ===============
 
 

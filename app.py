@@ -48,7 +48,16 @@ app.config["SQLALCHEMY_DATABASE_URI"] = db_url
 # padrão do SQLAlchemy) já toma o limite inteiro sozinha, e qualquer outra conexão
 # (deploy antigo ainda de saída, script local, etc.) derruba a aplicação com
 # "max clients reached in session mode".
-app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True, "pool_size": 3, "max_overflow": 2, "pool_recycle": 300}
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "pool_pre_ping": True,
+    "pool_size": 3,
+    "max_overflow": 2,
+    "pool_recycle": 300,
+    # o pooler do Supabase (PgBouncer) troca a conexão física por trás da mesma sessão
+    # do cliente; sem isso, o psycopg tenta reusar "prepared statements" que não
+    # existem mais nessa conexão e quebra com "DuplicatePreparedStatement" no boot.
+    "connect_args": {"prepare_threshold": None},
+}
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev")
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=14)
 

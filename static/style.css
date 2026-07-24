@@ -245,6 +245,9 @@ kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2p
 .mrowcard:hover{border-color:var(--mut)}
 .mrowcard.late{border-left-color:var(--red);background:#241A1C}
 .mrowcard.done{border-left-color:var(--green);opacity:.72}
+.mrowcard.estornada{border-left-color:var(--mut);opacity:.6}
+.mrowcard.estornada .mforn{color:var(--mut)}
+.mrowcard.estornada .mdias{color:var(--mut)}
 .mtop{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}
 .mpart{font-weight:600;font-size:13.5px;text-transform:uppercase}
 .mpart .fogo{font-size:11px;margin:0 8px 0 0}

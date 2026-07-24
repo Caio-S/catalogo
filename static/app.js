@@ -1157,12 +1157,30 @@ async function excluirReq(reqId, btn) { await guarded(async () => {
     showBanner('ok', `Requisição excluída: ${itemName(r.itemId)} · ${r.frota}.`, '');
   } catch (e) { showBanner('err', 'Falha: ' + e.message, ''); }
 }, btn); }
+async function estornarReq(reqId, btn) { await guarded(async () => {
+  const r = REQS.find(x => x.id === reqId); if (!r) return;
+  const motivo = await uiPrompt(
+    `Estornar esta requisição (${itemName(r.itemId)} · ${r.frota})? O agregado volta para disponível` +
+    (cascoPendente(r) ? ' e a pendência de casco é removida' : '') +
+    '. A requisição continua no histórico, marcada como estornada. Descreva o motivo:',
+    '', { title: 'Estornar requisição', okLabel: 'Estornar' }
+  );
+  if (!motivo) return;
+  try {
+    const saved = await api(`/requisitions/${reqId}/estornar`, { method: 'POST', body: JSON.stringify({ motivo, estornadoPor: await ensureOperator() }) });
+    Object.assign(r, saved);
+    const freshAggs = await api('/aggregates'); AGGS = freshAggs;
+    updateNav(); render();
+    showBanner('ok', `Requisição estornada: ${itemName(r.itemId)} · ${r.frota}.`, '');
+  } catch (e) { showBanner('err', 'Falha: ' + e.message, ''); }
+}, btn); }
 function reqCard(r) {
   // almoxarifado só age via a aba Almoxarifado; nas demais abas, só visualiza
   const podeAgir = ME?.role !== 'almoxarifado' || state.view === 'alm';
-  return `<div class="mrowcard ${r.status === 'DEVOLVIDO' ? 'done' : cascoPendente(r) ? 'late' : ''}">
+  const estornada = r.status === 'ESTORNADA';
+  return `<div class="mrowcard ${estornada ? 'estornada' : r.status === 'DEVOLVIDO' ? 'done' : cascoPendente(r) ? 'late' : ''}">
     <div class="mtop">
-      <div class="mpart">${r.fogoAgg ? `<span class="fogo">${esc(r.fogoAgg)}</span>` : ''}${esc(itemName(r.itemId))}</div>
+      <div class="mpart">${r.fogoAgg ? `<span class="fogo">${esc(r.fogoAgg)}</span>` : ''}${esc(itemName(r.itemId))}${estornada ? ' <span class="latebadge" style="background:var(--mut)">ESTORNADA</span>' : ''}</div>
       <div class="mforn">${esc(r.frota)}</div>
     </div>
     <div class="mdet">
@@ -1175,10 +1193,12 @@ function reqCard(r) {
     ${r.cascoStatus === 'PENDENTE' ? `<div class="latebadge" style="display:inline-block;margin-top:6px">🔩 CASCO PENDENTE · ${esc(r.cascoFunc || '–')}</div>` : ''}
     ${r.cascoStatus === 'NAO_DEVOLVIDO' ? `<div class="latebadge" style="display:inline-block;margin-top:6px">🔩 CASCO NÃO DEVOLVIDO</div><div class="mmeta">${br(r.dataCasco)} · ${esc(r.cascoEntreguePor || '–')}${r.cascoObs ? ' · ' + esc(r.cascoObs) : ''}</div>` : ''}
     ${r.cascoStatus === 'DEVOLVIDO' ? `<div class="mmeta" style="margin-top:6px">Casco entregue por <b>${esc(r.cascoEntreguePor || '–')}</b> · conf. <b>${esc(r.cascoRecebidoPor || '–')}</b> · ${br(r.dataCasco)}</div>` : ''}
+    ${estornada ? `<div class="mmeta" style="margin-top:6px">Estornada por <b>${esc(r.estornadoPor || '–')}</b> em ${br(r.dataEstorno)} · motivo: ${esc(r.estornoMotivo || '–')}</div>` : ''}
     <div class="factions" style="margin-top:10px">
-      ${r.entrega === 'PENDENTE' && podeAgir ? `<button class="btn" data-entrega="${r.id}">📦 Confirmar entrega</button>` : ''}
+      ${r.status === 'APLICADO' && r.entrega === 'PENDENTE' && podeAgir ? `<button class="btn" data-entrega="${r.id}">📦 Confirmar entrega</button>` : ''}
       ${r.status === 'APLICADO' && r.entrega === 'ENTREGUE' && cascoPendente(r) && podeAgir ? `<button class="btn amber" data-casco="${r.id}">🔩 Receber casco</button>` : ''}
       ${r.status === 'APLICADO' && podeAgir ? `<button class="btn primary" data-devolver="${r.id}">↩ Devolver</button>` : ''}
+      ${r.status === 'APLICADO' && podeAgir ? `<button class="btn" title="Estornar requisição (ex.: casco errado)" data-estornar="${r.id}">↩️ Estornar</button>` : ''}
       ${can.delete() ? `<button class="btn danger" title="Excluir requisição" data-excluirreq="${r.id}">🗑</button>` : ''}
     </div>
   </div>`;
@@ -1187,6 +1207,7 @@ function wireReqCardButtons() {
   $('#main').querySelectorAll('[data-entrega]').forEach(b => b.onclick = () => confirmarEntrega(b.dataset.entrega, b));
   $('#main').querySelectorAll('[data-casco]').forEach(b => b.onclick = () => receberCasco(b.dataset.casco));
   $('#main').querySelectorAll('[data-devolver]').forEach(b => b.onclick = () => devolverReq(b.dataset.devolver, b));
+  $('#main').querySelectorAll('[data-estornar]').forEach(b => b.onclick = () => estornarReq(b.dataset.estornar, b));
   $('#main').querySelectorAll('[data-excluirreq]').forEach(b => b.onclick = () => excluirReq(b.dataset.excluirreq, b));
 }
 function renderReqs() {

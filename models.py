@@ -212,7 +212,7 @@ class Req(db.Model):
     solicitante = db.Column(db.String(60))
     data_req = db.Column(db.Date)
     obs = db.Column(db.Text)
-    status = db.Column(db.String(20), nullable=False, default="APLICADO")  # APLICADO | DEVOLVIDO
+    status = db.Column(db.String(20), nullable=False, default="APLICADO")  # APLICADO | DEVOLVIDO | ESTORNADA
     data_dev = db.Column(db.Date)
     registrado_por = db.Column(db.String(60))
     entrega = db.Column(db.String(20), nullable=False, default="PENDENTE")  # PENDENTE | ENTREGUE
@@ -225,7 +225,10 @@ class Req(db.Model):
     casco_recebido_por = db.Column(db.String(60))
     casco_entregue_por = db.Column(db.String(60))
     casco_obs = db.Column(db.Text)
-    origem_sit = db.Column(db.String(20))  # situação do agregado novo antes da requisição (p/ reversão em cancelamento)
+    origem_sit = db.Column(db.String(20))  # situação do agregado novo antes da requisição (p/ reversão em cancelamento/estorno)
+    estorno_motivo = db.Column(db.Text)
+    estornado_por = db.Column(db.String(60))
+    data_estorno = db.Column(db.Date)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     item = db.relationship("Item")
@@ -253,4 +256,7 @@ class Req(db.Model):
             "cascoEntreguePor": self.casco_entregue_por,
             "cascoObs": self.casco_obs,
             "origemSit": self.origem_sit,
+            "estornoMotivo": self.estorno_motivo,
+            "estornadoPor": self.estornado_por,
+            "dataEstorno": self.data_estorno.isoformat() if self.data_estorno else None,
         }

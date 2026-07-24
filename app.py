@@ -61,7 +61,12 @@ def ensure_schema():
     insp = inspect(db.engine)
     wanted = {
         "movs": [("solicitacao_orc", "VARCHAR(60)")],
-        "reqs": [("origem_sit", "VARCHAR(20)")],
+        "reqs": [
+            ("origem_sit", "VARCHAR(20)"),
+            ("estorno_motivo", "TEXT"),
+            ("estornado_por", "VARCHAR(60)"),
+            ("data_estorno", "DATE"),
+        ],
     }
     with db.engine.begin() as conn:
         for table, cols in wanted.items():
@@ -750,9 +755,21 @@ def confirmar_entrega(req_id):
     if req.casco_status == "PENDENTE":
         if req.casco_fogo:
             sub = Aggregate.query.filter_by(fogo=req.casco_fogo).first()
-            if sub and sub.situacao in (SIT_APLICADO, SIT_PENDENTE_DEVOLUCAO):
-                sub.situacao = SIT_PENDENTE_DEVOLUCAO
-                sub.maquina = None
+            if sub:
+                if sub.situacao in (SIT_APLICADO, SIT_PENDENTE_DEVOLUCAO):
+                    sub.situacao = SIT_PENDENTE_DEVOLUCAO
+                    sub.maquina = None
+            else:
+                # casco com nº de fogo informado mas nunca cadastrado como agregado:
+                # cria o registro agora, já como pendente de devolução, pra ele aparecer
+                # no cadastro de agregados em vez de só ficar "escondido" na requisição
+                db.session.add(Aggregate(
+                    id=new_id("g"),
+                    fogo=req.casco_fogo,
+                    item_id=req.item_id,
+                    situacao=SIT_PENDENTE_DEVOLUCAO,
+                    obs=f"Casco antigo substituído na requisição {req.id} (fogo informado na hora, sem cadastro prévio).",
+                ))
         else:
             # casco sem cadastro: não há agregado pra mostrar a pendência, então
             # marca no saldo "devendo" do solicitante até ele devolver
@@ -845,24 +862,16 @@ def devolver_requisition(req_id):
     return jsonify(req.to_dict())
 
 
-@app.route("/api/requisitions/<req_id>", methods=["DELETE"])
-@require_role(ROLE_ADMIN)
-def cancelar_requisition(req_id):
-    req = Req.query.get_or_404(req_id)
-
-    # movimentação órfã: se o agregado referenciado não existe mais no cadastro,
-    # a movimentação também não pode existir — remoção livre, sem tocar saldos
-    if req.fogo_agg and not Aggregate.query.filter_by(fogo=req.fogo_agg).first():
-        db.session.delete(req)
-        db.session.commit()
-        return "", 204
-
+def reverter_efeitos_requisicao(req):
+    """Desfaz em agregados/saldos tudo que a requisição já provocou (Regra 3), sem
+    tocar no registro da requisição em si — usado tanto pra excluir quanto pra estornar.
+    Levanta ValueError (mensagem pronta pro usuário) se não for seguro reverter."""
     if req.casco_status == "DEVOLVIDO":
         if req.casco_fogo:
             casco_agg = Aggregate.query.filter_by(fogo=req.casco_fogo).first()
             if casco_agg:
                 if casco_agg.situacao == SIT_NO_FORNECEDOR:
-                    return jsonify({"error": f"Não é possível excluir: o casco {req.casco_fogo} já foi enviado ao fornecedor. Registre o retorno dele antes de excluir esta requisição."}), 409
+                    raise ValueError(f"o casco {req.casco_fogo} já foi enviado ao fornecedor. Registre o retorno dele antes.")
                 if casco_agg.situacao == SIT_P_CONSERTO:
                     casco_agg.situacao = SIT_APLICADO
                     casco_agg.maquina = req.frota
@@ -895,9 +904,59 @@ def cancelar_requisition(req_id):
             if item:
                 bump(item, "dv", -1)
 
+
+@app.route("/api/requisitions/<req_id>", methods=["DELETE"])
+@require_role(ROLE_ADMIN)
+def cancelar_requisition(req_id):
+    req = Req.query.get_or_404(req_id)
+
+    # movimentação órfã: se o agregado referenciado não existe mais no cadastro,
+    # a movimentação também não pode existir — remoção livre, sem tocar saldos
+    if req.fogo_agg and not Aggregate.query.filter_by(fogo=req.fogo_agg).first():
+        db.session.delete(req)
+        db.session.commit()
+        return "", 204
+
+    try:
+        reverter_efeitos_requisicao(req)
+    except ValueError as exc:
+        return jsonify({"error": f"Não é possível excluir: {exc}"}), 409
+
     db.session.delete(req)
     db.session.commit()
     return "", 204
+
+
+@app.route("/api/requisitions/<req_id>/estornar", methods=["POST"])
+@require_role(ROLE_ADMIN, ROLE_GESTOR, ROLE_ALMOXARIFADO)
+def estornar_requisition(req_id):
+    """Estorno: desfaz uma requisição em andamento (ex.: casco errado retirado no
+    almoxarifado) sem apagar o registro — fica marcada como ESTORNADA, com motivo e
+    responsável, pra manter o histórico. Diferente da exclusão (admin-only, apaga tudo)."""
+    req = Req.query.get_or_404(req_id)
+    if req.status != "APLICADO":
+        return jsonify({"error": "Só é possível estornar requisições em andamento (não devolvidas nem já estornadas)."}), 409
+
+    payload = request.get_json(force=True)
+    motivo = (payload.get("motivo") or "").strip()
+    if not motivo:
+        return jsonify({"error": "Informe o motivo do estorno."}), 400
+
+    try:
+        reverter_efeitos_requisicao(req)
+    except ValueError as exc:
+        return jsonify({"error": f"Não é possível estornar: {exc}"}), 409
+
+    req.status = "ESTORNADA"
+    # os efeitos já foram desfeitos acima; zera o casco_status pra não continuar
+    # aparecendo como pendência no almoxarifado (o cascoFogo/cascoFunc ficam só como histórico)
+    req.casco_status = None
+    req.estorno_motivo = motivo
+    req.estornado_por = (payload.get("estornadoPor") or "").strip()
+    req.data_estorno = date.today()
+
+    db.session.commit()
+    return jsonify(req.to_dict())
 
 
 @app.route("/api/status")

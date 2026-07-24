@@ -1227,6 +1227,10 @@ function renderAlm() {
     .sort((a, b) => diasAplicado(b) - diasAplicado(a));
   const cascos = REQS.filter(r => cascoPendente(r)).filter(matchQ)
     .sort((a, b) => (a.cascoStatus === 'NAO_DEVOLVIDO' ? 0 : 1) - (b.cascoStatus === 'NAO_DEVOLVIDO' ? 0 : 1) || diasAplicado(b) - diasAplicado(a));
+  // demais requisições em aberto (entrega já confirmada, sem casco pendente) — ainda assim
+  // ficam disponíveis aqui pro almoxarifado revisar, devolver ou estornar se precisar
+  const abertas = REQS.filter(r => r.status === 'APLICADO' && r.entrega !== 'PENDENTE' && !cascoPendente(r)).filter(matchQ)
+    .sort((a, b) => diasAplicado(b) - diasAplicado(a));
   $('#cnt').innerHTML = `<b>${entregas.length + cascos.length}</b> pendência(s)`;
   $('#main').innerHTML =
     `<div class="catlab" style="color:#2E9B7A">Fila do almoxarifado — pendências para dar baixa</div>` +
@@ -1235,7 +1239,10 @@ function renderAlm() {
       : '<div class="empty" style="padding:20px">Nenhuma requisição aguardando entrega.</div>') +
     `<div class="catlab" style="font-size:14px;color:var(--red)">🔩 Cascos a receber · ${cascos.length}</div>` +
     (cascos.length ? cascos.map(reqCard).join('')
-      : '<div class="empty" style="padding:20px">Nenhum casco pendente de recebimento.</div>');
+      : '<div class="empty" style="padding:20px">Nenhum casco pendente de recebimento.</div>') +
+    `<div class="catlab" style="font-size:14px;color:var(--mut)">📋 Em aberto (aguardando devolução) · ${abertas.length}</div>` +
+    (abertas.length ? abertas.map(reqCard).join('')
+      : '<div class="empty" style="padding:20px">Nenhuma outra requisição em aberto.</div>');
   wireReqCardButtons();
 }
 

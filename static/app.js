@@ -1175,8 +1175,9 @@ async function estornarReq(reqId, btn) { await guarded(async () => {
   } catch (e) { showBanner('err', 'Falha: ' + e.message, ''); }
 }, btn); }
 function reqCard(r) {
-  // almoxarifado só age via a aba Almoxarifado; nas demais abas, só visualiza
-  const podeAgir = ME?.role !== 'almoxarifado' || state.view === 'alm';
+  // almoxarifado só age via a aba Almoxarifado; nas demais abas, só visualiza.
+  // visitante nunca age, em nenhuma aba — só observa.
+  const podeAgir = ['admin', 'gestor'].includes(ME?.role) || (ME?.role === 'almoxarifado' && state.view === 'alm');
   const estornada = r.status === 'ESTORNADA';
   return `<div class="mrowcard ${estornada ? 'estornada' : r.status === 'DEVOLVIDO' ? 'done' : cascoPendente(r) ? 'late' : ''}">
     <div class="mtop">

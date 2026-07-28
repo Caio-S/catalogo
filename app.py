@@ -2,9 +2,7 @@ import os
 from datetime import date, datetime, timedelta
 from functools import wraps
 
-import requests
 from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
@@ -13,6 +11,7 @@ from models import (
     ROLE_ADMIN,
     ROLE_ALMOXARIFADO,
     ROLE_GESTOR,
+    ROLE_VISITANTE,
     SIT_APLICADO,
     SIT_DISPONIVEL_NOVO,
     SIT_DISPONIVEL_RECOND,
@@ -226,7 +225,7 @@ def create_user():
     payload = request.get_json(force=True)
     username = str(payload.get("username", "")).strip().lower()
     name = str(payload.get("name", "")).strip()
-    role = payload.get("role") if payload.get("role") in (ROLE_ADMIN, ROLE_GESTOR, ROLE_ALMOXARIFADO) else ROLE_GESTOR
+    role = payload.get("role") if payload.get("role") in (ROLE_ADMIN, ROLE_GESTOR, ROLE_ALMOXARIFADO, ROLE_VISITANTE) else ROLE_GESTOR
     pw = payload.get("password") or ""
     if not username or not name or len(pw) < 4:
         return jsonify({"error": "Usuário, nome e senha (mín. 4 caracteres) são obrigatórios."}), 400
@@ -246,7 +245,7 @@ def update_user(uid):
     payload = request.get_json(force=True)
     if "name" in payload:
         u.name = str(payload.get("name", "")).strip()
-    if payload.get("role") in (ROLE_ADMIN, ROLE_GESTOR, ROLE_ALMOXARIFADO):
+    if payload.get("role") in (ROLE_ADMIN, ROLE_GESTOR, ROLE_ALMOXARIFADO, ROLE_VISITANTE):
         u.role = payload["role"]
     if "ativo" in payload:
         u.ativo = bool(payload["ativo"])
@@ -983,22 +982,14 @@ def job_sync_mariadb():
         print(f"[sync_mariadb] falhou: {exc}")
 
 
-def job_keepalive():
-    url = os.environ.get("RENDER_EXTERNAL_URL")
-    if not url:
-        return
-    try:
-        requests.get(url.rstrip("/") + "/api/status", timeout=10)
-    except Exception:
-        pass
-
-
 def start_scheduler():
     job_sync_mariadb()  # roda uma vez de cara, sincrono, ao subir o servico
     scheduler = BackgroundScheduler(timezone="America/Sao_Paulo")
     scheduler.add_job(job_sync_mariadb, IntervalTrigger(hours=5))
-    if os.environ.get("RENDER_EXTERNAL_URL"):
-        scheduler.add_job(job_keepalive, CronTrigger(minute="*/14"))
+    # sem self-ping de keepalive de propósito: no free tier do Render, manter o app
+    # sempre acordado consome quase toda a cota de horas compartilhada da conta
+    # sozinho. Deixa hibernar quando ocioso — o primeiro acesso após inatividade
+    # só demora uns 30-50s a mais (cold start).
     scheduler.start()
 
 

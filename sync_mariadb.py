@@ -22,8 +22,10 @@ def _conn():
     )
 
 
-def fetch_funcionario(matricula):
-    """Busca nome do funcionario ativo pela matricula, em vw_funcionarios_ativos_atual."""
+def fetch_funcionarios(matricula):
+    """Busca todos os funcionarios ativos com essa matricula, em vw_funcionarios_ativos_atual.
+    Sem LIMIT 1 de proposito: a mesma matricula pode ter mais de um funcionario cadastrado
+    (duplicidade real na base), e quem chama precisa poder listar todos pro usuario escolher."""
     conn = _conn()
     try:
         with conn.cursor() as cur:
@@ -32,12 +34,19 @@ def fetch_funcionario(matricula):
                 SELECT matricula, nome
                 FROM vw_funcionarios_ativos_atual
                 WHERE matricula = %s AND ativo = 1
-                LIMIT 1
                 """,
                 (matricula,),
             )
-            row = cur.fetchone()
-            return {"matricula": row["matricula"], "nome": row["nome"].strip()} if row else None
+            rows = cur.fetchall()
+            vistos = set()
+            funcionarios = []
+            for row in rows:
+                nome = row["nome"].strip()
+                if nome in vistos:
+                    continue
+                vistos.add(nome)
+                funcionarios.append({"matricula": row["matricula"], "nome": nome})
+            return funcionarios
     finally:
         conn.close()
 

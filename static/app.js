@@ -988,7 +988,7 @@ function openReqForm(prefillFogo) {
   fillAggSelect($('#q_agg'));
   if (prefillFogo) $('#q_agg').value = prefillFogo;
   $('#q_frotacod').value = ''; $('#q_frota').value = '';
-  $('#q_matricula').value = ''; $('#q_solic').value = '';
+  $('#q_matricula').value = ''; $('#q_solic').value = ''; syncSolicPick();
   fillSubstituirOptions();
   $('#q_agg').onchange = fillSubstituirOptions;
   $('#q_frota').oninput = fillSubstituirOptions;
@@ -1008,7 +1008,32 @@ async function lookupInto(codeInputSel, targetInputSel, path, resultKey, notFoun
   }
 }
 $('#q_frotacod').addEventListener('blur', async () => { await lookupInto('#q_frotacod', '#q_frota', '/lookup/frota', 'descricao', 'Frota não encontrada'); fillSubstituirOptions(); });
-$('#q_matricula').addEventListener('blur', () => lookupInto('#q_matricula', '#q_solic', '/lookup/funcionario', 'nome', 'Matrícula não encontrada'));
+function syncSolicPick() {
+  $('#q_solic_pick_wrap').style.display = 'none';
+  $('#q_solic_pick').innerHTML = '';
+}
+async function lookupFuncionario() {
+  syncSolicPick();
+  const matricula = $('#q_matricula').value.trim();
+  if (!matricula) return;
+  try {
+    const r = await api(`/lookup/funcionario/${encodeURIComponent(matricula)}`);
+    const funcionarios = r.funcionarios || [];
+    if (funcionarios.length > 1) {
+      // matrícula duplicada: deixa o usuário escolher em vez de preencher sozinho
+      $('#q_solic').value = '';
+      $('#q_solic_pick').innerHTML = '<option value="">— selecione o funcionário —</option>' +
+        funcionarios.map(f => `<option value="${esc(f.nome)}">${esc(f.nome)}</option>`).join('');
+      $('#q_solic_pick_wrap').style.display = '';
+    } else if (funcionarios.length === 1) {
+      $('#q_solic').value = funcionarios[0].nome;
+    }
+  } catch (e) {
+    showBanner('err', 'Matrícula não encontrada: ' + e.message, '');
+  }
+}
+$('#q_matricula').addEventListener('blur', lookupFuncionario);
+$('#q_solic_pick').addEventListener('change', () => { $('#q_solic').value = $('#q_solic_pick').value; });
 $('#btnReq').onclick = async () => {
   const err = m => { $('#qerr').textContent = m; $('#qerr').style.display = 'block'; };
   const fogo = $('#q_agg').value;

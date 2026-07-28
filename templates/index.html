@@ -164,6 +164,10 @@
     <div class="fld"><label>Frota/equipamento *</label><input id="q_frota" placeholder="preenchido automaticamente"></div>
     <div class="fld"><label>Matrícula do funcionário</label><input id="q_matricula" inputmode="numeric" placeholder="nº no sistema"></div>
     <div class="fld"><label>Solicitante</label><input id="q_solic" placeholder="preenchido automaticamente"></div>
+    <div class="fld full" id="q_solic_pick_wrap" style="display:none">
+      <label>Matrícula duplicada — selecione o funcionário</label>
+      <select id="q_solic_pick"></select>
+    </div>
     <div class="fld full"><label>Agregado que será substituído (em uso nesta frota)</label>
       <select id="q_substituir"><option value="">— nenhum (primeira montagem) —</option></select>
       <div class="hint">Preencha a frota para listar os agregados em uso nela. Após a entrega, o substituído fica <b>pendente de devolução</b> até retornar ao almoxarifado.</div>

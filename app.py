@@ -652,12 +652,13 @@ def lookup_funcionario(matricula):
     if not matricula.isdigit():
         return jsonify({"error": "Matrícula inválida."}), 400
     try:
-        result = sync_mariadb.fetch_funcionario(int(matricula))
+        funcionarios = sync_mariadb.fetch_funcionarios(int(matricula))
     except Exception as exc:
         return jsonify({"error": f"Falha ao consultar: {exc}"}), 502
-    if not result:
+    if not funcionarios:
         return jsonify({"error": "Matrícula não encontrada (ou funcionário inativo)."}), 404
-    return jsonify(result)
+    # matricula duplicada: retorna todos pra quem chamou deixar o usuário escolher
+    return jsonify({"funcionarios": funcionarios})
 
 
 @app.route("/api/lookup/frota/<cod>")

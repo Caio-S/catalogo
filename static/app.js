@@ -11,6 +11,8 @@ let ME = null;
 const can = {
   create: () => ME && ['admin', 'gestor'].includes(ME.role),
   delete: () => ME && ME.role === 'admin',
+  // ferramentaria só pode criar requisição — em tudo o mais é somente leitura, como visitante
+  requisitar: () => ME && ['admin', 'gestor', 'ferramentaria'].includes(ME.role),
 };
 
 const $ = s => document.querySelector(s);
@@ -248,8 +250,7 @@ function setView(v) {
     movs: '🔧 Enviar ao fornecedor', reqs: '🚜 Nova requisição',
     usuarios: '＋ Novo usuário',
   }[v];
-  const needsCreatePerm = v !== 'usuarios';
-  const allowed = addLabel && (v === 'usuarios' ? ME?.role === 'admin' : (!needsCreatePerm || can.create()));
+  const allowed = addLabel && (v === 'usuarios' ? ME?.role === 'admin' : v === 'reqs' ? can.requisitar() : can.create());
   $('#btnAdd').style.display = allowed ? '' : 'none';
   if (addLabel) $('#btnAdd').textContent = addLabel;
   render();
@@ -707,7 +708,7 @@ function openAggFicha(fogo) {
       <div class="sect">Linha do tempo</div>
       ${eventos.length ? eventos.map(e => `<div class="mov"><div class="mrow"><div>${esc(e.txt)}</div><div class="mmeta">${br(e.data)}</div></div></div>`).join('') : '<span style="color:var(--mut);font-size:12px">Sem eventos registrados.</span>'}
       <div class="factions">
-        ${can.create() && ['DISPONIVEL_NOVO', 'DISPONIVEL_RECOND'].includes(a.situacao) ? '<button class="btn amber" id="btnReqAgg">🚜 Requisitar</button>' : ''}
+        ${can.requisitar() && ['DISPONIVEL_NOVO', 'DISPONIVEL_RECOND'].includes(a.situacao) ? '<button class="btn amber" id="btnReqAgg">🚜 Requisitar</button>' : ''}
         ${can.create() ? '<button class="btn primary" id="btnEditAgg">✎ Editar</button>' : ''}
         ${can.delete() ? '<button class="btn danger" id="btnDelAgg">🗑 Excluir</button>' : ''}
       </div>
@@ -725,7 +726,7 @@ function aggCard(a) {
       <div class="desc">${esc(itemName(a.itemId))}</div>
     </div></div>
     <div class="cods"><span>${sitChip(a.situacao)}</span>${a.maquina ? `<span>${esc(a.maquina)}</span>` : ''}</div>
-    ${disponivel && can.create() ? `<div style="padding:0 14px 12px"><button class="btn amber" style="width:100%" data-requisitar="${esc(a.fogo)}">🚜 Requisitar</button></div>` : ''}
+    ${disponivel && can.requisitar() ? `<div style="padding:0 14px 12px"><button class="btn amber" style="width:100%" data-requisitar="${esc(a.fogo)}">🚜 Requisitar</button></div>` : ''}
   </div>`;
 }
 function renderAggs() {

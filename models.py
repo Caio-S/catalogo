@@ -9,11 +9,13 @@ ROLE_ADMIN = "admin"
 ROLE_GESTOR = "gestor"
 ROLE_ALMOXARIFADO = "almoxarifado"
 ROLE_VISITANTE = "visitante"
+ROLE_FERRAMENTARIA = "ferramentaria"
 ROLE_LABELS = {
     ROLE_ADMIN: "Administrador",
     ROLE_GESTOR: "Gestor",
     ROLE_ALMOXARIFADO: "Almoxarifado",
     ROLE_VISITANTE: "Visitante",
+    ROLE_FERRAMENTARIA: "Ferramentaria",
 }
 
 

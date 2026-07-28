@@ -10,6 +10,7 @@ from flask import Flask, jsonify, redirect, render_template, request, session, u
 from models import (
     ROLE_ADMIN,
     ROLE_ALMOXARIFADO,
+    ROLE_FERRAMENTARIA,
     ROLE_GESTOR,
     ROLE_VISITANTE,
     SIT_APLICADO,
@@ -225,7 +226,7 @@ def create_user():
     payload = request.get_json(force=True)
     username = str(payload.get("username", "")).strip().lower()
     name = str(payload.get("name", "")).strip()
-    role = payload.get("role") if payload.get("role") in (ROLE_ADMIN, ROLE_GESTOR, ROLE_ALMOXARIFADO, ROLE_VISITANTE) else ROLE_GESTOR
+    role = payload.get("role") if payload.get("role") in (ROLE_ADMIN, ROLE_GESTOR, ROLE_ALMOXARIFADO, ROLE_VISITANTE, ROLE_FERRAMENTARIA) else ROLE_GESTOR
     pw = payload.get("password") or ""
     if not username or not name or len(pw) < 4:
         return jsonify({"error": "Usuário, nome e senha (mín. 4 caracteres) são obrigatórios."}), 400
@@ -245,7 +246,7 @@ def update_user(uid):
     payload = request.get_json(force=True)
     if "name" in payload:
         u.name = str(payload.get("name", "")).strip()
-    if payload.get("role") in (ROLE_ADMIN, ROLE_GESTOR, ROLE_ALMOXARIFADO, ROLE_VISITANTE):
+    if payload.get("role") in (ROLE_ADMIN, ROLE_GESTOR, ROLE_ALMOXARIFADO, ROLE_VISITANTE, ROLE_FERRAMENTARIA):
         u.role = payload["role"]
     if "ativo" in payload:
         u.ativo = bool(payload["ativo"])
@@ -676,7 +677,7 @@ def lookup_frota(cod):
 
 
 @app.route("/api/requisitions", methods=["POST"])
-@require_role(ROLE_ADMIN, ROLE_GESTOR)
+@require_role(ROLE_ADMIN, ROLE_GESTOR, ROLE_FERRAMENTARIA)
 def create_requisition():
     payload = request.get_json(force=True)
     item_id = payload.get("itemId")

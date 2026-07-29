@@ -687,12 +687,20 @@ function openAggFicha(fogo) {
     ...REQS.filter(r => r.fogoAgg === fogo).flatMap(r => [
       { data: r.dataReq, txt: `Requisitado p/ frota ${r.frota}${r.solicitante ? ' · sol. ' + r.solicitante : ''}${r.cascoFogo ? ' · substituindo ' + r.cascoFogo : ''}` },
       ...(r.dataEntrega ? [{ data: r.dataEntrega, txt: `Entrega confirmada pelo almoxarifado (${r.entreguePor || '–'}) — em uso na frota ${r.frota}` }] : []),
-      ...(r.dataDev ? [{ data: r.dataDev, txt: `Devolvido da frota ${r.frota} (${diasAplicado(r)} dias aplicado)${r.devSubstitutoFogo ? ' · substituído por ' + r.devSubstitutoFogo : ''}${r.devObs ? ' · ' + r.devObs : ''}` }] : []),
+      ...(r.dataDev ? [{
+        data: r.dataDev,
+        txt: r.devSubstitutoFogo && r.status !== 'DEVOLVIDO'
+          ? `Substituiu o casco antigo ${r.devSubstitutoFogo} na frota ${r.frota} — segue em uso${r.devObs ? ' · ' + r.devObs : ''}`
+          : `Devolvido da frota ${r.frota} (${diasAplicado(r)} dias aplicado)${r.devSubstitutoFogo ? ' · substituído por ' + r.devSubstitutoFogo : ''}${r.devObs ? ' · ' + r.devObs : ''}`,
+      }] : []),
     ]),
     ...REQS.filter(r => r.cascoFogo === fogo).flatMap(r => [
       ...(r.dataEntrega ? [{ data: r.dataEntrega, txt: `Substituído na frota ${r.frota} pelo ${r.fogoAgg || 'novo agregado'} — pendente de devolução ao almoxarifado` }] : []),
       ...(r.cascoStatus === 'DEVOLVIDO' && r.dataCasco ? [{ data: r.dataCasco, txt: `Casco devolvido ao almoxarifado por ${r.cascoEntreguePor || '–'} (conf. ${r.cascoRecebidoPor || '–'}) — disponível p/ manutenção` }] : []),
       ...(r.cascoStatus === 'NAO_DEVOLVIDO' && r.dataCasco ? [{ data: r.dataCasco, txt: `⚠ Confirmado como NÃO devolvido (resp.: ${r.cascoEntreguePor || r.cascoFunc || '–'})` }] : []),
+    ]),
+    ...REQS.filter(r => r.devSubstitutoFogo === fogo).flatMap(r => [
+      ...(r.dataDev ? [{ data: r.dataDev, txt: `Substituído na frota ${r.frota} pelo ${r.fogoAgg || '–'}${r.devObs ? ' · ' + r.devObs : ''}` }] : []),
     ]),
   ].filter(e => e.data).sort((x, y) => x.data.localeCompare(y.data));
   $('#ficha').innerHTML = `
@@ -1168,6 +1176,9 @@ function syncDevSubstitutoInfo() {
   $('#dev_substituto_info').textContent = a
     ? `Situação atual: ${SIT_LABEL[a.situacao] || a.situacao}${a.maquina ? ' · Frota ' + a.maquina : ''}`
     : '';
+  $('#dev_destino_label').textContent = fogo
+    ? `O casco antigo (${fogo}) precisa de conserto?`
+    : 'A peça devolvida precisa de conserto?';
 }
 function openDevolverForm(reqId) {
   const r = REQS.find(x => x.id === reqId); if (!r) return;
@@ -1199,7 +1210,9 @@ $('#btnDevolver').onclick = async () => {
     const freshReqs = await api('/requisitions'); REQS = freshReqs;
     refreshKpis(); updateNav(); render();
     $('#ov10').classList.remove('open');
-    showBanner('ok', `Requisição devolvida${substitutoFogo ? ' · ' + substitutoFogo + ' entrou em uso na frota' : ''}.`, '');
+    showBanner('ok', substitutoFogo
+      ? `Substituição registrada: ${substitutoFogo} saiu de uso (destino: ${destino === 'pc' ? 'P/ Conserto' : 'Disponível'}).`
+      : 'Requisição devolvida.', '');
   } catch (e) { return err(e.message); }
   finally { setBtnLoading($('#btnDevolver'), false); }
 };
@@ -1261,7 +1274,7 @@ function reqCard(r) {
     ${r.cascoStatus === 'NAO_DEVOLVIDO' ? `<div class="latebadge" style="display:inline-block;margin-top:6px">🔩 CASCO NÃO DEVOLVIDO</div><div class="mmeta">${br(r.dataCasco)} · ${esc(r.cascoEntreguePor || '–')}${r.cascoObs ? ' · ' + esc(r.cascoObs) : ''}</div>` : ''}
     ${r.cascoStatus === 'DEVOLVIDO' ? `<div class="mmeta" style="margin-top:6px">Casco entregue por <b>${esc(r.cascoEntreguePor || '–')}</b> · conf. <b>${esc(r.cascoRecebidoPor || '–')}</b> · ${br(r.dataCasco)}</div>` : ''}
     ${estornada ? `<div class="mmeta" style="margin-top:6px">Estornada por <b>${esc(r.estornadoPor || '–')}</b> em ${br(r.dataEstorno)} · motivo: ${esc(r.estornoMotivo || '–')}</div>` : ''}
-    ${r.status === 'DEVOLVIDO' && (r.devSubstitutoFogo || r.devObs) ? `<div class="mmeta" style="margin-top:6px">${r.devSubstitutoFogo ? 'Substituída por <b>' + esc(r.devSubstitutoFogo) + '</b>' : ''}${r.devSubstitutoFogo && r.devObs ? ' · ' : ''}${esc(r.devObs || '')}</div>` : ''}
+    ${(r.devSubstitutoFogo || r.devObs) ? `<div class="mmeta" style="margin-top:6px">${r.devSubstitutoFogo ? (r.status === 'DEVOLVIDO' ? 'Substituída por <b>' + esc(r.devSubstitutoFogo) + '</b>' : 'Substituiu <b>' + esc(r.devSubstitutoFogo) + '</b>') : ''}${r.devSubstitutoFogo && r.devObs ? ' · ' : ''}${esc(r.devObs || '')}</div>` : ''}
     <div class="factions" style="margin-top:10px">
       ${r.status === 'APLICADO' && r.entrega === 'PENDENTE' && podeAgir ? `<button class="btn" data-entrega="${r.id}">📦 Confirmar entrega</button>` : ''}
       ${r.status === 'APLICADO' && r.entrega === 'ENTREGUE' && cascoPendente(r) && podeAgir ? `<button class="btn amber" data-casco="${r.id}">🔩 Receber casco</button>` : ''}

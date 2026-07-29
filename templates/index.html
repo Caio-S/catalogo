@@ -252,13 +252,13 @@
     <button class="fx" data-close="ov10" style="margin:18px 20px 0 0">✕</button></div>
   <div class="fgrid">
     <div class="fld full" id="dev_info" style="color:var(--mut);font-size:12.5px"></div>
-    <div class="fld full"><label>A peça devolvida precisa de conserto?</label><select id="dev_destino">
+    <div class="fld full"><label>Substituiu qual casco antigo? (nº de fogo, opcional)</label><select id="dev_substituto"></select>
+      <div class="hint" id="dev_substituto_info"></div>
+    </div>
+    <div class="fld full"><label id="dev_destino_label">A peça devolvida precisa de conserto?</label><select id="dev_destino">
       <option value="disponivel">Não — fica disponível</option>
       <option value="pc">Sim — vai para P/ Conserto</option>
     </select></div>
-    <div class="fld full"><label>Substituída por (fica em uso nesta frota)</label><select id="dev_substituto"></select>
-      <div class="hint" id="dev_substituto_info"></div>
-    </div>
     <div class="fld full"><label>Observação</label><input id="dev_obs" maxlength="120"></div>
   </div>
   <div class="ferr" id="deverr"></div>

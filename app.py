@@ -868,45 +868,30 @@ def devolver_requisition(req_id):
         # agregado da peça (mesmo já aplicado em outra frota, em conserto etc.) — a
         # requisição antiga dele, se houver, não é fechada automaticamente aqui
 
-    req.status = "DEVOLVIDO"
     req.data_dev = date.today()
     req.registrado_por = registrado_por or req.registrado_por
-    # qual peça (fogo) substituiu esta na frota, se houver — registro pra rastreabilidade
+    # qual casco antigo esta peça substituiu na frota, se houver — registro pra rastreabilidade
     req.dev_substituto_fogo = substituto_fogo
     req.dev_obs = (payload.get("obs") or "").strip() or None
 
-    agg = Aggregate.query.filter_by(fogo=req.fogo_agg).first() if req.fogo_agg else None
-    if agg:
-        # ha agregado vinculado: so transiciona a situacao dele, sem somar no saldo
-        # (evita contar em duplicidade com o agregado, mesma logica do receber_casco)
-        agg.situacao = SIT_P_CONSERTO if destino == "pc" else SIT_DISPONIVEL_RECOND
-        agg.maquina = None
-    elif destino == "pc":
-        item = db.session.get(Item, req.item_id)
-        if item:
-            bump(item, "pc", 1)
-
     if sub_agg:
-        # Regra 3 — a substituta assume o lugar na frota agora mesmo (já se sabe, na hora
-        # da devolução, que ela é quem está entrando); gera a própria requisição já concluída,
-        # igual ficaria se tivesse passado pelo fluxo normal de Nova requisição + entrega
-        origem_sit = sub_agg.situacao
-        sub_agg.situacao = SIT_APLICADO
-        sub_agg.maquina = req.frota
-        db.session.add(Req(
-            id=new_id("r"),
-            item_id=req.item_id,
-            fogo_agg=substituto_fogo,
-            frota=req.frota,
-            solicitante=req.solicitante,
-            data_req=date.today(),
-            status="APLICADO",
-            registrado_por=registrado_por,
-            entrega="ENTREGUE",
-            data_entrega=date.today(),
-            entregue_por=registrado_por,
-            origem_sit=origem_sit,
-        ))
+        # a peça desta requisição já está (e continua) em uso na frota — quem sai de
+        # cena aqui é o casco antigo informado, que vai pro destino escolhido (o
+        # "precisa de conserto?" se refere a ELE, não à peça da requisição)
+        sub_agg.situacao = SIT_P_CONSERTO if destino == "pc" else SIT_DISPONIVEL_RECOND
+        sub_agg.maquina = None
+    else:
+        # sem substituto informado: fluxo original — a própria peça desta requisição
+        # é quem sai de uso agora
+        req.status = "DEVOLVIDO"
+        agg = Aggregate.query.filter_by(fogo=req.fogo_agg).first() if req.fogo_agg else None
+        if agg:
+            agg.situacao = SIT_P_CONSERTO if destino == "pc" else SIT_DISPONIVEL_RECOND
+            agg.maquina = None
+        elif destino == "pc":
+            item = db.session.get(Item, req.item_id)
+            if item:
+                bump(item, "pc", 1)
 
     db.session.commit()
     return jsonify(req.to_dict())

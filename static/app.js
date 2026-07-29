@@ -1158,9 +1158,16 @@ $('#btnSaveCasco').onclick = async () => {
   finally { setBtnLoading($('#btnSaveCasco'), false); }
 };
 function fillDevSubstitutoOptions(r) {
-  const disponiveis = AGGS.filter(a => a.itemId === r.itemId && ['DISPONIVEL_NOVO', 'DISPONIVEL_RECOND'].includes(a.situacao));
+  const opcoes = AGGS.filter(a => a.itemId === r.itemId && a.fogo !== r.fogoAgg);
   $('#dev_substituto').innerHTML = '<option value="">— nenhuma agora —</option>' +
-    disponiveis.map(a => `<option value="${esc(a.fogo)}">${esc(a.fogo)} (${SIT_LABEL[a.situacao]})</option>`).join('');
+    opcoes.map(a => `<option value="${esc(a.fogo)}">${esc(a.fogo)} — ${SIT_LABEL[a.situacao] || a.situacao}${a.maquina ? ' · ' + esc(a.maquina) : ''}</option>`).join('');
+}
+function syncDevSubstitutoInfo() {
+  const fogo = $('#dev_substituto').value;
+  const a = fogo ? aggByFogo(fogo) : null;
+  $('#dev_substituto_info').textContent = a
+    ? `Situação atual: ${SIT_LABEL[a.situacao] || a.situacao}${a.maquina ? ' · Frota ' + a.maquina : ''}`
+    : '';
 }
 function openDevolverForm(reqId) {
   const r = REQS.find(x => x.id === reqId); if (!r) return;
@@ -1168,6 +1175,8 @@ function openDevolverForm(reqId) {
   $('#dev_info').textContent = `${r.fogoAgg ? r.fogoAgg + ' · ' : ''}${itemName(r.itemId)} · Frota ${r.frota}`;
   $('#dev_destino').value = 'disponivel';
   fillDevSubstitutoOptions(r);
+  $('#dev_substituto').onchange = syncDevSubstitutoInfo;
+  syncDevSubstitutoInfo();
   $('#dev_obs').value = '';
   $('#deverr').style.display = 'none';
   $('#ov10').classList.add('open');

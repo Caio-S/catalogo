@@ -864,8 +864,9 @@ def devolver_requisition(req_id):
             return jsonify({"error": f"Agregado substituto {substituto_fogo} não encontrado."}), 404
         if sub_agg.item_id != req.item_id:
             return jsonify({"error": f"O agregado {substituto_fogo} não é da mesma peça."}), 409
-        if sub_agg.situacao not in (SIT_DISPONIVEL_NOVO, SIT_DISPONIVEL_RECOND):
-            return jsonify({"error": f"O agregado {substituto_fogo} não está disponível (situação atual: {sub_agg.situacao})."}), 409
+        # sem checagem de situação de propósito: o usuário pode escolher qualquer
+        # agregado da peça (mesmo já aplicado em outra frota, em conserto etc.) — a
+        # requisição antiga dele, se houver, não é fechada automaticamente aqui
 
     req.status = "DEVOLVIDO"
     req.data_dev = date.today()

@@ -365,7 +365,7 @@ function render() {
 /* =============== ficha da peca =============== */
 document.addEventListener('click', e => {
   const t = e.target.closest('.tag'); if (t && state.view === 'pecas') openFicha(t.dataset.id);
-  const overlayIds = ['ov', 'ov2', 'ov3', 'ov4', 'ov5', 'ov6', 'ov7', 'ov8'];
+  const overlayIds = ['ov', 'ov2', 'ov3', 'ov4', 'ov5', 'ov6', 'ov7', 'ov8', 'ov10'];
   if (overlayIds.includes(e.target.id)) $('#' + e.target.id).classList.remove('open');
   if (e.target.closest('[data-close]')) $('#' + e.target.closest('[data-close]').dataset.close).classList.remove('open');
   const chip = e.target.closest('.aggchip'); if (chip) openAggFicha(chip.dataset.fogo);
@@ -377,8 +377,8 @@ document.addEventListener('keydown', e => {
     if (e.key === 'Escape') document.activeElement.blur();
     return;
   }
-  const anyOpen = ['ov', 'ov2', 'ov3', 'ov4', 'ov5', 'ov6', 'ov7', 'ov8'].some(id => $('#' + id).classList.contains('open'));
-  if (e.key === 'Escape') { ['ov', 'ov2', 'ov3', 'ov4', 'ov5', 'ov6', 'ov7', 'ov8'].forEach(id => $('#' + id).classList.remove('open')); return; }
+  const anyOpen = ['ov', 'ov2', 'ov3', 'ov4', 'ov5', 'ov6', 'ov7', 'ov8', 'ov10'].some(id => $('#' + id).classList.contains('open'));
+  if (e.key === 'Escape') { ['ov', 'ov2', 'ov3', 'ov4', 'ov5', 'ov6', 'ov7', 'ov8', 'ov10'].forEach(id => $('#' + id).classList.remove('open')); return; }
   if (anyOpen) return;
   if (e.key === 'Enter' && document.activeElement.classList?.contains('tag')) return openFicha(document.activeElement.dataset.id);
   if (['1', '2', '3', '4', '5', '6'].includes(e.key)) {
@@ -477,6 +477,7 @@ async function delItem(id, btn) { await guarded(async () => {
 /* =============== formulário de peça =============== */
 let formImg = null, formMime = null, editId = null;
 let cascoReqId = null;
+let devReqId = null;
 function fillCatOptions(sel) {
   const cats = catList();
   $('#f_cat').innerHTML = (cats.length ? cats : ['Geral']).map(c => `<option${c === sel ? ' selected' : ''}>${esc(c)}</option>`).join('') +
@@ -686,7 +687,7 @@ function openAggFicha(fogo) {
     ...REQS.filter(r => r.fogoAgg === fogo).flatMap(r => [
       { data: r.dataReq, txt: `Requisitado p/ frota ${r.frota}${r.solicitante ? ' · sol. ' + r.solicitante : ''}${r.cascoFogo ? ' · substituindo ' + r.cascoFogo : ''}` },
       ...(r.dataEntrega ? [{ data: r.dataEntrega, txt: `Entrega confirmada pelo almoxarifado (${r.entreguePor || '–'}) — em uso na frota ${r.frota}` }] : []),
-      ...(r.dataDev ? [{ data: r.dataDev, txt: `Devolvido da frota ${r.frota} (${diasAplicado(r)} dias aplicado)` }] : []),
+      ...(r.dataDev ? [{ data: r.dataDev, txt: `Devolvido da frota ${r.frota} (${diasAplicado(r)} dias aplicado)${r.devSubstitutoFogo ? ' · substituído por ' + r.devSubstitutoFogo : ''}${r.devObs ? ' · ' + r.devObs : ''}` }] : []),
     ]),
     ...REQS.filter(r => r.cascoFogo === fogo).flatMap(r => [
       ...(r.dataEntrega ? [{ data: r.dataEntrega, txt: `Substituído na frota ${r.frota} pelo ${r.fogoAgg || 'novo agregado'} — pendente de devolução ao almoxarifado` }] : []),
@@ -1156,17 +1157,45 @@ $('#btnSaveCasco').onclick = async () => {
   } catch (e) { return err(e.message); }
   finally { setBtnLoading($('#btnSaveCasco'), false); }
 };
-async function devolverReq(reqId, btn) { await guarded(async () => {
-  const destino = await uiConfirm('A peça devolvida precisa de conserto?\nOK = vai para P/ Conserto · Cancelar = fica disponível', { title: 'Devolução da frota', okLabel: 'Precisa de conserto' }) ? 'pc' : 'disponivel';
+function syncDevSubstitutoReparo() {
+  const show = !!$('#dev_substituto').value.trim();
+  $('#dev_substituto_reparo_wrap').style.display = show ? '' : 'none';
+  if (!show) $('#dev_substituto_reparo').value = 'N';
+}
+function openDevolverForm(reqId) {
+  const r = REQS.find(x => x.id === reqId); if (!r) return;
+  devReqId = reqId;
+  $('#dev_info').textContent = `${r.fogoAgg ? r.fogoAgg + ' · ' : ''}${itemName(r.itemId)} · Frota ${r.frota}`;
+  $('#dev_destino').value = 'disponivel';
+  $('#dev_substituto').value = '';
+  $('#dev_substituto').oninput = syncDevSubstitutoReparo;
+  $('#dev_obs').value = '';
+  syncDevSubstitutoReparo();
+  $('#deverr').style.display = 'none';
+  $('#ov10').classList.add('open');
+}
+$('#btnDevolver').onclick = async () => {
+  const err = m => { $('#deverr').textContent = m; $('#deverr').style.display = 'block'; };
+  const reqId = devReqId;
+  const destino = $('#dev_destino').value;
+  const substitutoFogo = $('#dev_substituto').value.trim().toUpperCase();
+  const substitutoReparo = !!substitutoFogo && $('#dev_substituto_reparo').value === 'S';
+  const obs = $('#dev_obs').value.trim();
+  setBtnLoading($('#btnDevolver'), true);
   try {
-    const saved = await api(`/requisitions/${reqId}/devolucao`, { method: 'POST', body: JSON.stringify({ destino, registradoPor: await ensureOperator() }) });
+    const saved = await api(`/requisitions/${reqId}/devolucao`, {
+      method: 'POST',
+      body: JSON.stringify({ destino, substitutoFogo, substitutoReparo, obs, registradoPor: await ensureOperator() }),
+    });
     Object.assign(REQS.find(r => r.id === reqId), saved);
     const fresh = await api('/items'); DATA = fresh.items;
     const freshAggs = await api('/aggregates'); AGGS = freshAggs;
     refreshKpis(); updateNav(); render();
-    showBanner('ok', 'Requisição devolvida.', '');
-  } catch (e) { showBanner('err', 'Falha: ' + e.message, ''); }
-}, btn); }
+    $('#ov10').classList.remove('open');
+    showBanner('ok', `Requisição devolvida${substitutoFogo ? ' · substituída por ' + substitutoFogo + (substitutoReparo ? ' (P/ Conserto)' : '') : ''}.`, '');
+  } catch (e) { return err(e.message); }
+  finally { setBtnLoading($('#btnDevolver'), false); }
+};
 async function excluirReq(reqId, btn) { await guarded(async () => {
   const r = REQS.find(x => x.id === reqId); if (!r) return;
   let msg;
@@ -1225,6 +1254,7 @@ function reqCard(r) {
     ${r.cascoStatus === 'NAO_DEVOLVIDO' ? `<div class="latebadge" style="display:inline-block;margin-top:6px">🔩 CASCO NÃO DEVOLVIDO</div><div class="mmeta">${br(r.dataCasco)} · ${esc(r.cascoEntreguePor || '–')}${r.cascoObs ? ' · ' + esc(r.cascoObs) : ''}</div>` : ''}
     ${r.cascoStatus === 'DEVOLVIDO' ? `<div class="mmeta" style="margin-top:6px">Casco entregue por <b>${esc(r.cascoEntreguePor || '–')}</b> · conf. <b>${esc(r.cascoRecebidoPor || '–')}</b> · ${br(r.dataCasco)}</div>` : ''}
     ${estornada ? `<div class="mmeta" style="margin-top:6px">Estornada por <b>${esc(r.estornadoPor || '–')}</b> em ${br(r.dataEstorno)} · motivo: ${esc(r.estornoMotivo || '–')}</div>` : ''}
+    ${r.status === 'DEVOLVIDO' && (r.devSubstitutoFogo || r.devObs) ? `<div class="mmeta" style="margin-top:6px">${r.devSubstitutoFogo ? 'Substituída por <b>' + esc(r.devSubstitutoFogo) + '</b>' : ''}${r.devSubstitutoFogo && r.devObs ? ' · ' : ''}${esc(r.devObs || '')}</div>` : ''}
     <div class="factions" style="margin-top:10px">
       ${r.status === 'APLICADO' && r.entrega === 'PENDENTE' && podeAgir ? `<button class="btn" data-entrega="${r.id}">📦 Confirmar entrega</button>` : ''}
       ${r.status === 'APLICADO' && r.entrega === 'ENTREGUE' && cascoPendente(r) && podeAgir ? `<button class="btn amber" data-casco="${r.id}">🔩 Receber casco</button>` : ''}
@@ -1237,7 +1267,7 @@ function reqCard(r) {
 function wireReqCardButtons() {
   $('#main').querySelectorAll('[data-entrega]').forEach(b => b.onclick = () => confirmarEntrega(b.dataset.entrega, b));
   $('#main').querySelectorAll('[data-casco]').forEach(b => b.onclick = () => receberCasco(b.dataset.casco));
-  $('#main').querySelectorAll('[data-devolver]').forEach(b => b.onclick = () => devolverReq(b.dataset.devolver, b));
+  $('#main').querySelectorAll('[data-devolver]').forEach(b => b.onclick = () => openDevolverForm(b.dataset.devolver));
   $('#main').querySelectorAll('[data-estornar]').forEach(b => b.onclick = () => estornarReq(b.dataset.estornar, b));
   $('#main').querySelectorAll('[data-excluirreq]').forEach(b => b.onclick = () => excluirReq(b.dataset.excluirreq, b));
 }

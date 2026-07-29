@@ -222,6 +222,8 @@ class Req(db.Model):
     obs = db.Column(db.Text)
     status = db.Column(db.String(20), nullable=False, default="APLICADO")  # APLICADO | DEVOLVIDO | ESTORNADA
     data_dev = db.Column(db.Date)
+    dev_substituto_fogo = db.Column(db.String(20))  # nº de fogo de quem substituiu esta peça na frota (informativo, opcional)
+    dev_obs = db.Column(db.Text)
     registrado_por = db.Column(db.String(60))
     entrega = db.Column(db.String(20), nullable=False, default="PENDENTE")  # PENDENTE | ENTREGUE
     data_entrega = db.Column(db.Date)
@@ -252,6 +254,8 @@ class Req(db.Model):
             "obs": self.obs,
             "status": self.status,
             "dataDev": self.data_dev.isoformat() if self.data_dev else None,
+            "devSubstitutoFogo": self.dev_substituto_fogo,
+            "devObs": self.dev_obs,
             "registradoPor": self.registrado_por,
             "entrega": self.entrega,
             "dataEntrega": self.data_entrega.isoformat() if self.data_entrega else None,

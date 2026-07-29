@@ -75,6 +75,8 @@ def ensure_schema():
             ("estorno_motivo", "TEXT"),
             ("estornado_por", "VARCHAR(60)"),
             ("data_estorno", "DATE"),
+            ("dev_substituto_fogo", "VARCHAR(20)"),
+            ("dev_obs", "TEXT"),
         ],
     }
     with db.engine.begin() as conn:
@@ -856,6 +858,25 @@ def devolver_requisition(req_id):
     req.status = "DEVOLVIDO"
     req.data_dev = date.today()
     req.registrado_por = (payload.get("registradoPor") or "").strip() or req.registrado_por
+    # qual peça (fogo) substituiu esta na frota, se houver — registro pra rastreabilidade
+    req.dev_substituto_fogo = (payload.get("substitutoFogo") or "").strip().upper() or None
+    req.dev_obs = (payload.get("obs") or "").strip() or None
+
+    if req.dev_substituto_fogo and payload.get("substitutoReparo"):
+        # o casco antigo informado aqui já é sabido que precisa de reparo — vai direto
+        # pra P/ Conserto (se ainda não tiver cadastro, cria agora)
+        sub_agg = Aggregate.query.filter_by(fogo=req.dev_substituto_fogo).first()
+        if sub_agg:
+            sub_agg.situacao = SIT_P_CONSERTO
+            sub_agg.maquina = None
+        else:
+            db.session.add(Aggregate(
+                id=new_id("g"),
+                fogo=req.dev_substituto_fogo,
+                item_id=req.item_id,
+                situacao=SIT_P_CONSERTO,
+                obs=f"Casco antigo substituído, registrado na devolução da requisição {req.id}.",
+            ))
 
     agg = Aggregate.query.filter_by(fogo=req.fogo_agg).first() if req.fogo_agg else None
     if agg:

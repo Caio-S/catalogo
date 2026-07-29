@@ -247,6 +247,32 @@
   </div>
 </div></div>
 
+<div class="overlay" id="ov10"><div class="ficha form" id="devBox" style="border-top-color:var(--amber)">
+  <div class="fh" style="padding:0"><h2 style="flex:1">Devolução da frota</h2>
+    <button class="fx" data-close="ov10" style="margin:18px 20px 0 0">✕</button></div>
+  <div class="fgrid">
+    <div class="fld full" id="dev_info" style="color:var(--mut);font-size:12.5px"></div>
+    <div class="fld full"><label>A peça devolvida precisa de conserto?</label><select id="dev_destino">
+      <option value="disponivel">Não — fica disponível</option>
+      <option value="pc">Sim — vai para P/ Conserto</option>
+    </select></div>
+    <div class="fld full"><label>Substituída por (nº de fogo, opcional)</label><input id="dev_substituto" placeholder="ex.: CGE-002"></div>
+    <div class="fld full" id="dev_substituto_reparo_wrap" style="display:none">
+      <label>O casco antigo (nº de fogo acima) vai precisar de reparo?</label>
+      <select id="dev_substituto_reparo">
+        <option value="N">Não — fica disponível</option>
+        <option value="S">Sim — já vai direto para P/ Conserto</option>
+      </select>
+    </div>
+    <div class="fld full"><label>Observação</label><input id="dev_obs" maxlength="120"></div>
+  </div>
+  <div class="ferr" id="deverr"></div>
+  <div class="formbtns">
+    <button class="btn" data-close="ov10">Cancelar</button>
+    <button class="btn primary" id="btnDevolver">Confirmar devolução</button>
+  </div>
+</div></div>
+
 <div class="overlay" id="ov9" style="z-index:90"><div class="ficha form" style="max-width:440px;border-top-color:var(--green)" id="uiBox">
   <div class="fh" style="padding:0"><h2 id="uiTitle" style="flex:1;font-size:20px">Confirmação</h2></div>
   <div style="padding:10px 20px 0;font-size:13.5px;line-height:1.55;white-space:pre-line;color:var(--txt)" id="uiMsg"></div>

@@ -854,29 +854,25 @@ def devolver_requisition(req_id):
         return jsonify({"error": "Confirme a entrega antes de registrar a devolução — ou exclua a requisição."}), 409
     payload = request.get_json(force=True)
     destino = payload.get("destino") if payload.get("destino") in ("pc", "disponivel") else "disponivel"
+    substituto_fogo = (payload.get("substitutoFogo") or "").strip().upper() or None
+    registrado_por = (payload.get("registradoPor") or "").strip()
+
+    sub_agg = None
+    if substituto_fogo:
+        sub_agg = Aggregate.query.filter_by(fogo=substituto_fogo).first()
+        if not sub_agg:
+            return jsonify({"error": f"Agregado substituto {substituto_fogo} não encontrado."}), 404
+        if sub_agg.item_id != req.item_id:
+            return jsonify({"error": f"O agregado {substituto_fogo} não é da mesma peça."}), 409
+        if sub_agg.situacao not in (SIT_DISPONIVEL_NOVO, SIT_DISPONIVEL_RECOND):
+            return jsonify({"error": f"O agregado {substituto_fogo} não está disponível (situação atual: {sub_agg.situacao})."}), 409
 
     req.status = "DEVOLVIDO"
     req.data_dev = date.today()
-    req.registrado_por = (payload.get("registradoPor") or "").strip() or req.registrado_por
+    req.registrado_por = registrado_por or req.registrado_por
     # qual peça (fogo) substituiu esta na frota, se houver — registro pra rastreabilidade
-    req.dev_substituto_fogo = (payload.get("substitutoFogo") or "").strip().upper() or None
+    req.dev_substituto_fogo = substituto_fogo
     req.dev_obs = (payload.get("obs") or "").strip() or None
-
-    if req.dev_substituto_fogo and payload.get("substitutoReparo"):
-        # o casco antigo informado aqui já é sabido que precisa de reparo — vai direto
-        # pra P/ Conserto (se ainda não tiver cadastro, cria agora)
-        sub_agg = Aggregate.query.filter_by(fogo=req.dev_substituto_fogo).first()
-        if sub_agg:
-            sub_agg.situacao = SIT_P_CONSERTO
-            sub_agg.maquina = None
-        else:
-            db.session.add(Aggregate(
-                id=new_id("g"),
-                fogo=req.dev_substituto_fogo,
-                item_id=req.item_id,
-                situacao=SIT_P_CONSERTO,
-                obs=f"Casco antigo substituído, registrado na devolução da requisição {req.id}.",
-            ))
 
     agg = Aggregate.query.filter_by(fogo=req.fogo_agg).first() if req.fogo_agg else None
     if agg:
@@ -888,6 +884,28 @@ def devolver_requisition(req_id):
         item = db.session.get(Item, req.item_id)
         if item:
             bump(item, "pc", 1)
+
+    if sub_agg:
+        # Regra 3 — a substituta assume o lugar na frota agora mesmo (já se sabe, na hora
+        # da devolução, que ela é quem está entrando); gera a própria requisição já concluída,
+        # igual ficaria se tivesse passado pelo fluxo normal de Nova requisição + entrega
+        origem_sit = sub_agg.situacao
+        sub_agg.situacao = SIT_APLICADO
+        sub_agg.maquina = req.frota
+        db.session.add(Req(
+            id=new_id("r"),
+            item_id=req.item_id,
+            fogo_agg=substituto_fogo,
+            frota=req.frota,
+            solicitante=req.solicitante,
+            data_req=date.today(),
+            status="APLICADO",
+            registrado_por=registrado_por,
+            entrega="ENTREGUE",
+            data_entrega=date.today(),
+            entregue_por=registrado_por,
+            origem_sit=origem_sit,
+        ))
 
     db.session.commit()
     return jsonify(req.to_dict())

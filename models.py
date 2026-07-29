@@ -222,7 +222,7 @@ class Req(db.Model):
     obs = db.Column(db.Text)
     status = db.Column(db.String(20), nullable=False, default="APLICADO")  # APLICADO | DEVOLVIDO | ESTORNADA
     data_dev = db.Column(db.Date)
-    dev_substituto_fogo = db.Column(db.String(20))  # nº de fogo de quem substituiu esta peça na frota (informativo, opcional)
+    dev_substituto_fogo = db.Column(db.String(20))  # nº de fogo de quem substituiu esta peça na frota (opcional; gera a própria requisição já aplicada)
     dev_obs = db.Column(db.Text)
     registrado_por = db.Column(db.String(60))
     entrega = db.Column(db.String(20), nullable=False, default="PENDENTE")  # PENDENTE | ENTREGUE

@@ -1157,20 +1157,18 @@ $('#btnSaveCasco').onclick = async () => {
   } catch (e) { return err(e.message); }
   finally { setBtnLoading($('#btnSaveCasco'), false); }
 };
-function syncDevSubstitutoReparo() {
-  const show = !!$('#dev_substituto').value.trim();
-  $('#dev_substituto_reparo_wrap').style.display = show ? '' : 'none';
-  if (!show) $('#dev_substituto_reparo').value = 'N';
+function fillDevSubstitutoOptions(r) {
+  const disponiveis = AGGS.filter(a => a.itemId === r.itemId && ['DISPONIVEL_NOVO', 'DISPONIVEL_RECOND'].includes(a.situacao));
+  $('#dev_substituto').innerHTML = '<option value="">— nenhuma agora —</option>' +
+    disponiveis.map(a => `<option value="${esc(a.fogo)}">${esc(a.fogo)} (${SIT_LABEL[a.situacao]})</option>`).join('');
 }
 function openDevolverForm(reqId) {
   const r = REQS.find(x => x.id === reqId); if (!r) return;
   devReqId = reqId;
   $('#dev_info').textContent = `${r.fogoAgg ? r.fogoAgg + ' · ' : ''}${itemName(r.itemId)} · Frota ${r.frota}`;
   $('#dev_destino').value = 'disponivel';
-  $('#dev_substituto').value = '';
-  $('#dev_substituto').oninput = syncDevSubstitutoReparo;
+  fillDevSubstitutoOptions(r);
   $('#dev_obs').value = '';
-  syncDevSubstitutoReparo();
   $('#deverr').style.display = 'none';
   $('#ov10').classList.add('open');
 }
@@ -1178,21 +1176,21 @@ $('#btnDevolver').onclick = async () => {
   const err = m => { $('#deverr').textContent = m; $('#deverr').style.display = 'block'; };
   const reqId = devReqId;
   const destino = $('#dev_destino').value;
-  const substitutoFogo = $('#dev_substituto').value.trim().toUpperCase();
-  const substitutoReparo = !!substitutoFogo && $('#dev_substituto_reparo').value === 'S';
+  const substitutoFogo = $('#dev_substituto').value;
   const obs = $('#dev_obs').value.trim();
   setBtnLoading($('#btnDevolver'), true);
   try {
     const saved = await api(`/requisitions/${reqId}/devolucao`, {
       method: 'POST',
-      body: JSON.stringify({ destino, substitutoFogo, substitutoReparo, obs, registradoPor: await ensureOperator() }),
+      body: JSON.stringify({ destino, substitutoFogo, obs, registradoPor: await ensureOperator() }),
     });
     Object.assign(REQS.find(r => r.id === reqId), saved);
     const fresh = await api('/items'); DATA = fresh.items;
     const freshAggs = await api('/aggregates'); AGGS = freshAggs;
+    const freshReqs = await api('/requisitions'); REQS = freshReqs;
     refreshKpis(); updateNav(); render();
     $('#ov10').classList.remove('open');
-    showBanner('ok', `Requisição devolvida${substitutoFogo ? ' · substituída por ' + substitutoFogo + (substitutoReparo ? ' (P/ Conserto)' : '') : ''}.`, '');
+    showBanner('ok', `Requisição devolvida${substitutoFogo ? ' · ' + substitutoFogo + ' entrou em uso na frota' : ''}.`, '');
   } catch (e) { return err(e.message); }
   finally { setBtnLoading($('#btnDevolver'), false); }
 };

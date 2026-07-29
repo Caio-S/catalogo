@@ -256,14 +256,7 @@
       <option value="disponivel">Não — fica disponível</option>
       <option value="pc">Sim — vai para P/ Conserto</option>
     </select></div>
-    <div class="fld full"><label>Substituída por (nº de fogo, opcional)</label><input id="dev_substituto" placeholder="ex.: CGE-002"></div>
-    <div class="fld full" id="dev_substituto_reparo_wrap" style="display:none">
-      <label>O casco antigo (nº de fogo acima) vai precisar de reparo?</label>
-      <select id="dev_substituto_reparo">
-        <option value="N">Não — fica disponível</option>
-        <option value="S">Sim — já vai direto para P/ Conserto</option>
-      </select>
-    </div>
+    <div class="fld full"><label>Substituída por (fica em uso nesta frota)</label><select id="dev_substituto"></select></div>
     <div class="fld full"><label>Observação</label><input id="dev_obs" maxlength="120"></div>
   </div>
   <div class="ferr" id="deverr"></div>

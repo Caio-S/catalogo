@@ -997,17 +997,21 @@ function openReqForm(prefillFogo) {
   $('#qerr').style.display = 'none';
   $('#ov5').classList.add('open');
 }
-async function lookupInto(codeInputSel, targetInputSel, path, resultKey, notFoundMsg) {
-  const code = $(codeInputSel).value.trim();
-  if (!code) return;
+async function lookupFrota() {
+  const cod = $('#q_frotacod').value.trim();
+  if (!cod) return;
   try {
-    const r = await api(`${path}/${encodeURIComponent(code)}`);
-    $(targetInputSel).value = r[resultKey];
+    const r = await api(`/lookup/frota/${encodeURIComponent(cod)}`);
+    // guarda código + descrição juntos: só a descrição repete pra toda colhedora do
+    // mesmo modelo (ex.: "COLHEDORA JOHN DEERE CH570"), sem o código não dá pra saber
+    // qual máquina específica é — isso também é o que a checagem de substituição de
+    // casco usa pra comparar "mesma frota", então sem o código ela nem funcionava certo.
+    $('#q_frota').value = `${r.codFrota} - ${r.descricao}`;
   } catch (e) {
-    showBanner('err', notFoundMsg + ': ' + e.message, '');
+    showBanner('err', 'Frota não encontrada: ' + e.message, '');
   }
 }
-$('#q_frotacod').addEventListener('blur', async () => { await lookupInto('#q_frotacod', '#q_frota', '/lookup/frota', 'descricao', 'Frota não encontrada'); fillSubstituirOptions(); });
+$('#q_frotacod').addEventListener('blur', async () => { await lookupFrota(); fillSubstituirOptions(); });
 function syncSolicPick() {
   $('#q_solic_pick_wrap').style.display = 'none';
   $('#q_solic_pick').innerHTML = '';

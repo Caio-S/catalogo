@@ -1266,6 +1266,8 @@ function reqCard(r) {
     <div class="mdet">
       <div>Aplicado <b>${br(r.dataReq)}</b></div>
       <div>Entrega <b>${r.entrega === 'ENTREGUE' ? 'Confirmada' : 'Pendente'}</b></div>
+      ${r.registradoPor ? `<div>Requisitado por <b>${esc(r.registradoPor)}</b></div>` : ''}
+      ${r.solicitante ? `<div>Associado <b>${esc(r.solicitante)}</b></div>` : ''}
       ${r.cascoFogo ? `<div>Substitui <b>${esc(r.cascoFogo)}</b></div>` : ''}
       ${r.cascoStatus ? `<div>Casco <b>${r.cascoStatus === 'DEVOLVIDO' ? 'Devolvido' : r.cascoStatus === 'NAO_DEVOLVIDO' ? 'Não devolvido' : 'Pendente'}</b></div>` : ''}
       <div class="mdias">${diasAplicado(r)}<div class="dl">dias</div></div>
@@ -1318,9 +1320,7 @@ function renderAlm() {
     `<div class="catlab" style="font-size:14px;color:var(--blue)">📦 Entregas a confirmar · ${entregas.length}</div>` +
     (entregas.length ? entregas.map(reqCard).join('')
       : '<div class="empty" style="padding:20px">Nenhuma requisição aguardando entrega.</div>') +
-    `<div class="catlab" style="font-size:14px;color:var(--red)">🔩 Cascos a receber · ${cascos.length}</div>` +
-    (cascos.length ? cascos.map(reqCard).join('')
-      : '<div class="empty" style="padding:20px">Nenhum casco pendente de recebimento.</div>') +
+    (cascos.length ? `<div class="catlab" style="font-size:14px;color:var(--red)">🔩 Cascos a receber · ${cascos.length}</div>` + cascos.map(reqCard).join('') : '') +
     `<div class="catlab" style="font-size:14px;color:var(--mut)">📋 Em aberto (aguardando devolução) · ${abertas.length}</div>` +
     (abertas.length ? abertas.map(reqCard).join('')
       : '<div class="empty" style="padding:20px">Nenhuma outra requisição em aberto.</div>');

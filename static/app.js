@@ -430,7 +430,9 @@ function openFicha(id) {
   const d = byId(id); if (!d) return;
   const src = imgSrc(d);
   const divergencia = checkConsist(d);
-  const chips = aggsOf(d.id).map(a => `<span class="aggchip" data-fogo="${esc(a.fogo)}"><span class="af">${esc(a.fogo)}</span>${sitChip(a.situacao, a.maquina)}</span>`).join('') || '<span style="color:var(--mut);font-size:12px">Nenhum agregado cadastrado.</span>';
+  const aggs = aggsOf(d.id);
+  const emUso = aggs.filter(a => a.situacao === 'APLICADO').length;
+  const chips = aggs.map(a => `<span class="aggchip" data-fogo="${esc(a.fogo)}"><span class="af">${esc(a.fogo)}</span>${sitChip(a.situacao, a.maquina)}</span>`).join('') || '<span style="color:var(--mut);font-size:12px">Nenhum agregado cadastrado.</span>';
   const movsHist = MOVS.filter(m => m.itemId === d.id).sort((a, b) => (b.dataEnvio || '').localeCompare(a.dataEnvio || ''));
   $('#ficha').innerHTML = `
     <div class="fh"><span class="fogo">${esc(d.fogo || ('ITEM ' + (d.n ?? '')))}</span><button class="fx" data-close="ov">✕</button></div>
@@ -450,6 +452,7 @@ function openFicha(id) {
         <div class="fs"><div class="v" style="color:var(--green)">${fmt(d.sr)}</div><div class="l">Recond.</div></div>
         <div class="fs"><div class="v" style="color:#F07E3C">${fmt(d.em)}</div><div class="l">Em manut.</div></div>
         <div class="fs"><div class="v" style="color:var(--red)">${fmt(d.dv)}</div><div class="l">Devendo</div></div>
+        <div class="fs"><div class="v" style="color:#9FB6C4">${fmt(emUso)}</div><div class="l">Em uso</div></div>
       </div>
       <div class="sect">Agregados cadastrados</div>
       <div>${chips}</div>

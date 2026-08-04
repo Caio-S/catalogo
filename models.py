@@ -86,8 +86,13 @@ class Item(db.Model):
             "novo": self.novo,
             "updatedAt": self.updated_at.strftime("%d/%m/%Y %H:%M") if self.updated_at else None,
         }
-        if include_photo and self.foto_b64:
-            d["foto"] = {"b64": self.foto_b64, "mime": self.foto_mime}
+        if include_photo:
+            if self.foto_b64:
+                d["foto"] = {"b64": self.foto_b64, "mime": self.foto_mime}
+        else:
+            # listagem: a foto não vem inline (pesa demais pra ser rebaixada em toda
+            # ação); o front busca em /api/items/<id>/photo só quando precisa mostrá-la
+            d["hasFoto"] = bool(self.foto_b64)
         return d
 
 

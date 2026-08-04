@@ -1,3 +1,4 @@
+import base64
 import os
 from datetime import date, datetime, timedelta
 from functools import wraps
@@ -5,7 +6,7 @@ from functools import wraps
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
-from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, Response, jsonify, redirect, render_template, request, session, url_for
 
 from models import (
     ROLE_ADMIN,
@@ -283,11 +284,27 @@ def list_items():
     items = Item.query.order_by(Item.cat, Item.n).all()
     return jsonify(
         {
-            "items": [i.to_dict() for i in items],
+            # sem foto inline: pesaria em toda listagem (é a maior fatia do egress do
+            # banco). O front busca a foto de cada peça sob demanda em /photo, com cache.
+            "items": [i.to_dict(include_photo=False) for i in items],
             "ts": get_meta("updated_at"),
             "mariadbTs": get_meta("mariadb_sync_ts"),
         }
     )
+
+
+@app.route("/api/items/<item_id>/photo")
+@login_required
+def item_photo(item_id):
+    item = db.session.get(Item, item_id)
+    if not item or not item.foto_b64:
+        return "", 404
+    data = base64.b64decode(item.foto_b64)
+    resp = Response(data, mimetype=item.foto_mime or "image/jpeg")
+    # cacheável por bastante tempo: o front já muda a URL (via ?v=updatedAt) sempre
+    # que a peça é editada, então um cache longo aqui não serve foto desatualizada
+    resp.headers["Cache-Control"] = "private, max-age=2592000"
+    return resp
 
 
 @app.route("/api/items", methods=["POST"])

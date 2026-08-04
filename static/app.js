@@ -18,7 +18,8 @@ const can = {
 const $ = s => document.querySelector(s);
 const fmt = n => n > 0 ? n : '–';
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const imgSrc = d => d.foto ? `data:${d.foto.mime};base64,${d.foto.b64}` : null;
+const imgSrc = d => d.foto ? `data:${d.foto.mime};base64,${d.foto.b64}`
+  : (d.hasFoto ? `/api/items/${d.id}/photo?v=${encodeURIComponent(d.updatedAt || '')}` : null);
 const catList = () => [...new Set(DATA.map(d => d.cat))];
 const byId = id => DATA.find(d => d.id === id);
 const itemName = id => byId(id)?.desc || '(peça removida)';
@@ -514,8 +515,11 @@ function openForm(id) {
   $('#f_cr').value = d ? (d.codRec ?? '') : '';
   $('#f_ref').value = d ? (d.ref || '') : '';
   for (const k of ['sn', 'pc', 'sr', 'em', 'dv']) $('#f_' + k).value = d ? (d[k] || 0) : 0;
-  formImg = d && d.foto ? d.foto.b64 : null; formMime = d && d.foto ? d.foto.mime : null;
-  $('#f_pv').innerHTML = formImg ? `<img src="data:${formMime};base64,${formImg}">`
+  // formImg só é setado se o usuário enviar uma foto NOVA agora; deixando em branco
+  // ao editar, o backend preserva a foto atual (não precisa reenviar o base64 aqui)
+  formImg = null; formMime = null;
+  const previewSrc = d ? imgSrc(d) : null;
+  $('#f_pv').innerHTML = previewSrc ? `<img src="${previewSrc}">`
     : '<span style="color:#8CA096;font-size:10px;font-family:var(--disp);letter-spacing:.1em">SEM FOTO</span>';
   $('#ferr').style.display = 'none';
   $('#ov2').classList.add('open');

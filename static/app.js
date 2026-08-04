@@ -186,7 +186,12 @@ const SIT_CLS = {
   APLICADO: 'sit-am', BAIXADO: 'sit-bx',
   RESERVADO: 'sit-rs', PENDENTE_DEVOLUCAO: 'sit-pd',
 };
-const sitChip = s => `<span class="sit ${SIT_CLS[s] || ''}">${SIT_LABEL[s] || s}</span>`;
+const sitChip = (s, maquina) => {
+  // "em uso" mostra o código da frota em vez do rótulo genérico, quando disponível
+  // (maquina vem como "código - descrição"; pega só o código pro chip não ficar gigante)
+  const label = s === 'APLICADO' && maquina ? 'EM USO ' + String(maquina).split(' - ')[0].trim() : (SIT_LABEL[s] || s);
+  return `<span class="sit ${SIT_CLS[s] || ''}">${esc(label)}</span>`;
+};
 
 /* =============== KPIs =============== */
 function refreshKpis() {
@@ -424,7 +429,7 @@ function openFicha(id) {
   const d = byId(id); if (!d) return;
   const src = imgSrc(d);
   const divergencia = checkConsist(d);
-  const chips = aggsOf(d.id).map(a => `<span class="aggchip" data-fogo="${esc(a.fogo)}"><span class="af">${esc(a.fogo)}</span>${sitChip(a.situacao)}</span>`).join('') || '<span style="color:var(--mut);font-size:12px">Nenhum agregado cadastrado.</span>';
+  const chips = aggsOf(d.id).map(a => `<span class="aggchip" data-fogo="${esc(a.fogo)}"><span class="af">${esc(a.fogo)}</span>${sitChip(a.situacao, a.maquina)}</span>`).join('') || '<span style="color:var(--mut);font-size:12px">Nenhum agregado cadastrado.</span>';
   const movsHist = MOVS.filter(m => m.itemId === d.id).sort((a, b) => (b.dataEnvio || '').localeCompare(a.dataEnvio || ''));
   $('#ficha').innerHTML = `
     <div class="fh"><span class="fogo">${esc(d.fogo || ('ITEM ' + (d.n ?? '')))}</span><button class="fx" data-close="ov">✕</button></div>
@@ -708,7 +713,7 @@ function openAggFicha(fogo) {
     <div class="fbody">
       <div class="ftitle">${esc(itemName(a.itemId))}</div>
       <div class="fmeta">
-        <div><div class="k">Situação</div><div class="v">${sitChip(a.situacao)}</div></div>
+        <div><div class="k">Situação</div><div class="v">${sitChip(a.situacao, a.maquina)}</div></div>
         <div><div class="k">Máquina</div><div class="v">${esc(a.maquina || '–')}</div></div>
         <div><div class="k">Série</div><div class="v">${esc(a.serie || '–')}</div></div>
         <div><div class="k">Cadastrado em</div><div class="v">${esc(a.criadoEm || '–')}</div></div>
@@ -734,7 +739,7 @@ function aggCard(a) {
       <span class="fogo">${esc(a.fogo)}</span>
       <div class="desc">${esc(itemName(a.itemId))}</div>
     </div></div>
-    <div class="cods"><span>${sitChip(a.situacao)}</span>${a.maquina ? `<span>${esc(a.maquina)}</span>` : ''}</div>
+    <div class="cods"><span>${sitChip(a.situacao, a.maquina)}</span></div>
     ${disponivel && can.requisitar() ? `<div style="padding:0 14px 12px"><button class="btn amber" style="width:100%" data-requisitar="${esc(a.fogo)}">🚜 Requisitar</button></div>` : ''}
   </div>`;
 }

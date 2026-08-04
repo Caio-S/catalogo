@@ -602,6 +602,7 @@ function syncAggPrefix() {
 function syncAggSit() {
   const emUso = $('#g_sit').value === 'APLICADO';
   $('#g_maqwrap').style.display = emUso ? '' : 'none';
+  $('#g_frotacodwrap').style.display = emUso ? '' : 'none';
 }
 function openAggForm(aggId, prefillItemId) {
   const a = aggId ? AGGS.find(x => x.id === aggId) : null;
@@ -636,6 +637,9 @@ function openAggForm(aggId, prefillItemId) {
   }
   $('#g_serie').value = a ? (a.serie || '') : '';
   $('#g_maq').value = a ? (a.maquina || '') : '';
+  // se a máquina já estiver salva como "código - descrição", pré-preenche o código
+  const codPrefix = a && a.maquina ? a.maquina.split(' - ')[0].trim() : '';
+  $('#g_frotacod').value = /^\d+$/.test(codPrefix) ? codPrefix : '';
   syncAggSit();
   $('#g_obs').value = a ? (a.obs || '') : '';
   $('#gerr').style.display = 'none';
@@ -1018,8 +1022,8 @@ function openReqForm(prefillFogo) {
   $('#qerr').style.display = 'none';
   $('#ov5').classList.add('open');
 }
-async function lookupFrota() {
-  const cod = $('#q_frotacod').value.trim();
+async function lookupFrotaInto(codSel, targetSel) {
+  const cod = $(codSel).value.trim();
   if (!cod) return;
   try {
     const r = await api(`/lookup/frota/${encodeURIComponent(cod)}`);
@@ -1027,12 +1031,13 @@ async function lookupFrota() {
     // mesmo modelo (ex.: "COLHEDORA JOHN DEERE CH570"), sem o código não dá pra saber
     // qual máquina específica é — isso também é o que a checagem de substituição de
     // casco usa pra comparar "mesma frota", então sem o código ela nem funcionava certo.
-    $('#q_frota').value = `${r.codFrota} - ${r.descricao}`;
+    $(targetSel).value = `${r.codFrota} - ${r.descricao}`;
   } catch (e) {
     showBanner('err', 'Frota não encontrada: ' + e.message, '');
   }
 }
-$('#q_frotacod').addEventListener('blur', async () => { await lookupFrota(); fillSubstituirOptions(); });
+$('#q_frotacod').addEventListener('blur', async () => { await lookupFrotaInto('#q_frotacod', '#q_frota'); fillSubstituirOptions(); });
+$('#g_frotacod').addEventListener('blur', () => lookupFrotaInto('#g_frotacod', '#g_maq'));
 function syncSolicPick() {
   $('#q_solic_pick_wrap').style.display = 'none';
   $('#q_solic_pick').innerHTML = '';

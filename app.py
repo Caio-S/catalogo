@@ -1,5 +1,6 @@
 import base64
 import os
+import re
 from datetime import date, datetime, timedelta
 from functools import wraps
 
@@ -372,6 +373,14 @@ def new_id(prefix):
     return prefix + str(int(datetime.utcnow().timestamp() * 1000))
 
 
+def frota_cod(s):
+    """Campo 'máquina' convive em 3 formatos ('código - descrição', só código, só
+    descrição antiga) — extrai só o código quando dá, senão cai pra string inteira."""
+    s = (s or "").strip()
+    m = re.match(r"^\d+", s)
+    return m.group(0) if m else s.upper()
+
+
 def parse_date(s):
     if not s:
         return None
@@ -725,8 +734,7 @@ def create_requisition():
             return jsonify({"error": f"Agregado a substituir {substituir} não encontrado."}), 404
         if agg_sub.situacao != SIT_APLICADO:
             return jsonify({"error": f"O agregado {substituir} não está em uso em equipamento (situação atual: {agg_sub.situacao})."}), 409
-        maq_sub = (agg_sub.maquina or "").strip().upper()
-        if maq_sub and maq_sub != frota.strip().upper():
+        if agg_sub.maquina and frota_cod(agg_sub.maquina) != frota_cod(frota):
             return jsonify({"error": f"O agregado {substituir} está em uso na frota {agg_sub.maquina}, não em {frota}."}), 409
         casco_status = "PENDENTE"
         casco_fogo = substituir

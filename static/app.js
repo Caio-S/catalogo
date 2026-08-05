@@ -26,6 +26,13 @@ const itemName = id => byId(id)?.desc || '(peça removida)';
 const aggByFogo = f => AGGS.find(a => a.fogo === f);
 const aggsOf = itemId => AGGS.filter(a => a.itemId === itemId);
 const abertos = itemId => MOVS.filter(m => m.itemId === itemId && m.status === 'NO_FORNECEDOR');
+// pc/em na peça só contam unidades avulsas (sem fogo); soma aqui com os agregados
+// com fogo individual na mesma situação, pro total bater com o que os chips mostram
+const pcTotal = d => (d.pc || 0) + aggsOf(d.id).filter(a => a.situacao === 'P_CONSERTO').length;
+const emTotal = d => (d.em || 0) + aggsOf(d.id).filter(a => a.situacao === 'MANUTENCAO_INTERNA').length;
+// campo "máquina" convive em 3 formatos ("código - descrição", só código, só descrição
+// antiga) — compara só o código quando dá pra extrair, senão cai pra string inteira
+const frotaCod = s => (String(s || '').trim().match(/^\d+/) || [String(s || '').trim().toUpperCase()])[0];
 
 document.addEventListener('animationend', e => {
   if (e.animationName === 'cardDrop') e.target.classList.remove('tag-enter');
@@ -197,11 +204,15 @@ const sitChip = (s, maquina) => {
 /* =============== KPIs =============== */
 function refreshKpis() {
   const t = k => DATA.reduce((s, d) => s + (+d[k] || 0), 0);
+  // pc/em das peças só contam unidades avulsas (sem fogo); soma com os agregados
+  // com fogo individual na mesma situação pro total bater com os chips
+  const pcAggTotal = AGGS.filter(a => a.situacao === 'P_CONSERTO').length;
+  const emAggTotal = AGGS.filter(a => a.situacao === 'MANUTENCAO_INTERNA').length;
   const kpis = [
     ['sn', 'Saldo novo', t('sn'), 'var(--blue)', 'peças novas em estoque'],
-    ['pc', 'P/ conserto', t('pc'), 'var(--amber)', 'aguardando envio'],
+    ['pc', 'P/ conserto', t('pc') + pcAggTotal, 'var(--amber)', 'aguardando envio'],
     ['sr', 'Saldo recond.', t('sr'), 'var(--green)', 'prontas para uso'],
-    ['em', 'Em manutenção', t('em'), '#F07E3C', 'em recondicionamento'],
+    ['em', 'Em manutenção', t('em') + emAggTotal, '#F07E3C', 'em recondicionamento'],
     ['dv', 'Devendo', t('dv'), 'var(--red)', 'cascos devendo devolução (associados)'],
   ];
   $('#kpis').innerHTML = kpis.map(([k, l, v, c, s]) =>
@@ -325,9 +336,9 @@ function card(d, idx) {
     ${fornBlock}
     <div class="saldos">
       <div class="sd ${d.sn > 0 ? 'hot-b' : ''}"><div class="v">${fmt(d.sn)}</div><div class="l">Novo</div></div>
-      <div class="sd ${d.pc > 0 ? 'hot-a' : ''}"><div class="v">${fmt(d.pc)}</div><div class="l">P/ Cons.</div></div>
+      <div class="sd ${pcTotal(d) > 0 ? 'hot-a' : ''}"><div class="v">${fmt(pcTotal(d))}</div><div class="l">P/ Cons.</div></div>
       <div class="sd ${d.sr > 0 ? 'hot-g' : ''}"><div class="v">${fmt(d.sr)}</div><div class="l">Recond.</div></div>
-      <div class="sd ${d.em > 0 ? 'hot-o' : ''}"><div class="v">${fmt(d.em)}</div><div class="l">Manut.</div></div>
+      <div class="sd ${emTotal(d) > 0 ? 'hot-o' : ''}"><div class="v">${fmt(emTotal(d))}</div><div class="l">Manut.</div></div>
       <div class="sd ${d.dv > 0 ? 'hot-r' : ''}"><div class="v">${fmt(d.dv)}</div><div class="l">Devendo</div></div>
     </div>
     <div class="strip st-${st}"></div>
@@ -448,9 +459,9 @@ function openFicha(id) {
       </div>
       <div class="fsaldos">
         <div class="fs"><div class="v" style="color:var(--blue)">${fmt(d.sn)}</div><div class="l">Saldo novo</div></div>
-        <div class="fs"><div class="v" style="color:var(--amber)">${fmt(d.pc)}</div><div class="l">P/ conserto</div></div>
+        <div class="fs"><div class="v" style="color:var(--amber)">${fmt(pcTotal(d))}</div><div class="l">P/ conserto</div></div>
         <div class="fs"><div class="v" style="color:var(--green)">${fmt(d.sr)}</div><div class="l">Recond.</div></div>
-        <div class="fs"><div class="v" style="color:#F07E3C">${fmt(d.em)}</div><div class="l">Em manut.</div></div>
+        <div class="fs"><div class="v" style="color:#F07E3C">${fmt(emTotal(d))}</div><div class="l">Em manut.</div></div>
         <div class="fs"><div class="v" style="color:var(--red)">${fmt(d.dv)}</div><div class="l">Devendo</div></div>
         <div class="fs"><div class="v" style="color:#9FB6C4">${fmt(emUso)}</div><div class="l">Em uso</div></div>
       </div>
@@ -993,10 +1004,11 @@ function fillAggSelect(sel) {
     : '<option value="">Nenhum agregado disponível</option>';
 }
 function fillSubstituirOptions() {
-  const frota = $('#q_frota').value.trim().toUpperCase();
+  const frota = $('#q_frota').value.trim();
+  const frotaC = frotaCod(frota);
   const fogoNovo = $('#q_agg').value;
   const emUso = AGGS.filter(a => a.situacao === 'APLICADO' && a.fogo !== fogoNovo
-    && (!frota || (a.maquina || '').trim().toUpperCase() === frota));
+    && (!frota || frotaCod(a.maquina) === frotaC));
   $('#q_substituir').innerHTML =
     '<option value="">— nenhum (primeira montagem) —</option>' +
     emUso.map(a => `<option value="${esc(a.fogo)}">${esc(a.fogo)} · ${esc(itemName(a.itemId))}${a.maquina ? ' · ' + esc(a.maquina) : ''}</option>`).join('') +

@@ -1,9 +1,11 @@
 import base64
+import io
 import os
 import re
 from datetime import date, datetime, timedelta
 from functools import wraps
 
+import openpyxl
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
@@ -45,21 +47,26 @@ elif db_url.startswith("postgresql://"):
     db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
-# pool pequeno de propósito: o pooler do Supabase (modo session) limita a 15 conexões
-# simultâneas no total. Sem isso, uma única instância (pool_size=5 + overflow=10 por
-# padrão do SQLAlchemy) já toma o limite inteiro sozinha, e qualquer outra conexão
-# (deploy antigo ainda de saída, script local, etc.) derruba a aplicação com
-# "max clients reached in session mode".
-app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-    "pool_pre_ping": True,
-    "pool_size": 3,
-    "max_overflow": 2,
-    "pool_recycle": 300,
-    # o pooler do Supabase (PgBouncer) troca a conexão física por trás da mesma sessão
-    # do cliente; sem isso, o psycopg tenta reusar "prepared statements" que não
-    # existem mais nessa conexão e quebra com "DuplicatePreparedStatement" no boot.
-    "connect_args": {"prepare_threshold": None},
-}
+# as opções abaixo (pool pequeno + prepare_threshold) são específicas do psycopg/pooler
+# do Supabase — só fazem sentido (e só são aceitas) numa URL postgres. O fallback sqlite
+# (default_sqlite, usado quando não há DATABASE_URL — dev local sem Postgres) fica com
+# as opções padrão do SQLAlchemy.
+if db_url.startswith("postgresql"):
+    # pool pequeno de propósito: o pooler do Supabase (modo session) limita a 15 conexões
+    # simultâneas no total. Sem isso, uma única instância (pool_size=5 + overflow=10 por
+    # padrão do SQLAlchemy) já toma o limite inteiro sozinha, e qualquer outra conexão
+    # (deploy antigo ainda de saída, script local, etc.) derruba a aplicação com
+    # "max clients reached in session mode".
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "pool_pre_ping": True,
+        "pool_size": 3,
+        "max_overflow": 2,
+        "pool_recycle": 300,
+        # o pooler do Supabase (PgBouncer) troca a conexão física por trás da mesma sessão
+        # do cliente; sem isso, o psycopg tenta reusar "prepared statements" que não
+        # existem mais nessa conexão e quebra com "DuplicatePreparedStatement" no boot.
+        "connect_args": {"prepare_threshold": None},
+    }
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev")
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=14)
 
@@ -520,6 +527,148 @@ def delete_aggregate(agg_id):
     db.session.delete(agg)
     db.session.commit()
     return "", 204
+
+
+# =============== importacao de agregados via planilha (padrao CADASTAGR) ===============
+# Layout esperado (1a aba do arquivo): colunas ITEM, CÓD NOVO, CÓD REC, N FOGO,
+# descrição, REF, CADASTRO (NOVO/RECONDICIONADO), ... — cada linha vira um agregado
+# individual em estoque no almoxarifado (sem máquina/frota associada).
+
+
+def _int_str(v):
+    try:
+        return str(int(v))
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_import_xlsx(file_bytes):
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    ws = wb.worksheets[0]
+    rows = []
+    for row in ws.iter_rows(min_row=1, values_only=True):
+        if len(row) < 7:
+            continue
+        cod_novo = _int_str(row[1])
+        cod_rec = _int_str(row[2])
+        fogo = str(row[3]).strip().upper() if row[3] else ""
+        # linhas de título/cabeçalho não têm código numérico nem fogo válido — filtra sozinho
+        if not cod_novo or not cod_rec or not fogo:
+            continue
+        desc = str(row[4] or "").strip().upper()
+        ref = str(row[5]).strip() if row[5] is not None else ""
+        cadastro = str(row[6] or "").strip().upper()
+        situacao = SIT_DISPONIVEL_NOVO if cadastro == "NOVO" else SIT_DISPONIVEL_RECOND
+        rows.append({"fogo": fogo, "cod_novo": cod_novo, "cod_rec": cod_rec, "desc": desc, "ref": ref, "situacao": situacao})
+    return rows
+
+
+def _dedup_and_split(rows):
+    seen, keep = set(), []
+    for r in rows:
+        if r["fogo"] in seen:
+            continue
+        seen.add(r["fogo"])
+        keep.append(r)
+    fogos = [r["fogo"] for r in keep]
+    existing_fogos = {f for (f,) in db.session.query(Aggregate.fogo).filter(Aggregate.fogo.in_(fogos)).all()} if fogos else set()
+    to_create = [r for r in keep if r["fogo"] not in existing_fogos]
+    return keep, to_create
+
+
+@app.route("/api/import/aggregates/preview", methods=["POST"])
+@require_role(ROLE_ADMIN)
+def import_aggregates_preview():
+    payload = request.get_json(force=True)
+    file_b64 = payload.get("fileB64")
+    if not file_b64:
+        return jsonify({"error": "Arquivo não enviado."}), 400
+    try:
+        rows = parse_import_xlsx(base64.b64decode(file_b64))
+    except Exception:
+        return jsonify({"error": "Não consegui ler o arquivo. Confira se é um .xlsx válido."}), 400
+    if not rows:
+        return jsonify({"error": "Nenhuma linha com número de fogo, código novo e código rec. válidos foi encontrada na planilha."}), 400
+
+    keep, to_create = _dedup_and_split(rows)
+
+    new_items, reused = [], 0
+    seen_keys = set()
+    for r in to_create:
+        key = (r["cod_novo"], r["cod_rec"])
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        if Item.query.filter_by(cod_novo=r["cod_novo"], cod_rec=r["cod_rec"]).first():
+            reused += 1
+        else:
+            new_items.append({"codNovo": r["cod_novo"], "codRec": r["cod_rec"], "ref": r["ref"], "desc": r["desc"]})
+
+    return jsonify({
+        "totalLinhas": len(rows),
+        "duplicadosNoArquivo": len(rows) - len(keep),
+        "jaCadastrados": len(keep) - len(to_create),
+        "aCriar": len(to_create),
+        "pecasNovas": new_items,
+        "pecasReaproveitadas": reused,
+        "novo": sum(1 for r in to_create if r["situacao"] == SIT_DISPONIVEL_NOVO),
+        "recondicionado": sum(1 for r in to_create if r["situacao"] == SIT_DISPONIVEL_RECOND),
+    })
+
+
+@app.route("/api/import/aggregates/commit", methods=["POST"])
+@require_role(ROLE_ADMIN)
+def import_aggregates_commit():
+    payload = request.get_json(force=True)
+    file_b64 = payload.get("fileB64")
+    if not file_b64:
+        return jsonify({"error": "Arquivo não enviado."}), 400
+    try:
+        rows = parse_import_xlsx(base64.b64decode(file_b64))
+    except Exception:
+        return jsonify({"error": "Não consegui ler o arquivo. Confira se é um .xlsx válido."}), 400
+
+    _, to_create = _dedup_and_split(rows)
+    if not to_create:
+        return jsonify({"criados": 0, "pecasNovas": 0})
+
+    # new_id() usa timestamp em milissegundos — ótimo pra 1 registro por request, mas
+    # num loop de dezenas/centenas de linhas várias chamadas caem no mesmo milissegundo
+    # e colidem na chave primária. Aqui carimba um sufixo sequencial por lote pra evitar isso.
+    batch_ts = int(datetime.utcnow().timestamp() * 1000)
+
+    def batch_id(prefix, i):
+        return f"{prefix}{batch_ts}{i:04d}"
+
+    max_n = db.session.query(db.func.max(Item.n)).scalar() or 0
+    item_by_key = {}
+    n_new_items = 0
+    for i, r in enumerate(to_create):
+        key = (r["cod_novo"], r["cod_rec"])
+        if key in item_by_key:
+            continue
+        item = Item.query.filter_by(cod_novo=r["cod_novo"], cod_rec=r["cod_rec"]).first()
+        if not item:
+            max_n += 1
+            item = Item(id=batch_id("a", i), cat="Geral", cod_novo=r["cod_novo"], cod_rec=r["cod_rec"],
+                        desc=r["desc"], ref=r["ref"], n=max_n, novo=False)
+            db.session.add(item)
+            n_new_items += 1
+        item_by_key[key] = item
+
+    for i, r in enumerate(to_create):
+        item = item_by_key[(r["cod_novo"], r["cod_rec"])]
+        db.session.add(Aggregate(
+            id=batch_id("g", i),
+            fogo=r["fogo"],
+            item_id=item.id,
+            situacao=r["situacao"],
+            obs="Importado via planilha (padrão CADASTAGR)",
+        ))
+
+    set_meta("updated_at", datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+    db.session.commit()
+    return jsonify({"criados": len(to_create), "pecasNovas": n_new_items})
 
 
 # =============== movimentacoes (envio/retorno ao fornecedor) ===============

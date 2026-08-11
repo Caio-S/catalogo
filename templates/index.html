@@ -64,6 +64,7 @@
     <span class="chip c-em" data-f="em">🔧 No fornecedor</span>
     <span class="chip c-ok" data-f="sr">Com saldo recond.</span>
     <button class="btn primary" id="btnAdd">＋ Adicionar peça</button>
+    <button class="btn" id="btnImportAgg" style="display:none">📥 Importar planilha</button>
     <button class="btn" id="btnExport">⬇ Exportar Excel</button>
     <button class="btn" id="btnRefresh" title="Sincronizar com os dados mais recentes">🔄</button>
     <span class="count" id="cnt"></span>
@@ -266,6 +267,22 @@
   <div class="formbtns">
     <button class="btn" data-close="ov10">Cancelar</button>
     <button class="btn primary" id="btnDevolver">Confirmar devolução</button>
+  </div>
+</div></div>
+
+<div class="overlay" id="ov11"><div class="ficha form" style="max-width:640px;border-top-color:var(--blue)" id="impBox">
+  <div class="fh" style="padding:0"><h2 style="flex:1">Importar agregados via planilha</h2>
+    <button class="fx" data-close="ov11" style="margin:18px 20px 0 0">✕</button></div>
+  <div class="fgrid">
+    <div class="fld full" style="color:var(--mut);font-size:12.5px">Formato padrão: 1ª aba com colunas ITEM, CÓD NOVO, CÓD REC, N FOGO, descrição, REF, CADASTRO (NOVO/RECONDICIONADO). Cada linha vira um agregado individual disponível no almoxarifado (sem frota).</div>
+    <div class="fld full"><label>Arquivo (.xlsx)</label><input type="file" id="imp_file" accept=".xlsx"></div>
+    <div class="fld full" id="imp_results" style="display:none"></div>
+  </div>
+  <div class="ferr" id="imperr"></div>
+  <div class="formbtns">
+    <button class="btn" data-close="ov11">Cancelar</button>
+    <button class="btn" id="btnImpAnalisar">Analisar planilha</button>
+    <button class="btn primary" id="btnImpConfirmar" style="display:none">Confirmar importação</button>
   </div>
 </div></div>
 

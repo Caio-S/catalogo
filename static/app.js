@@ -270,6 +270,7 @@ function setView(v) {
   const allowed = addLabel && (v === 'usuarios' ? ME?.role === 'admin' : v === 'reqs' ? can.requisitar() : can.create());
   $('#btnAdd').style.display = allowed ? '' : 'none';
   if (addLabel) $('#btnAdd').textContent = addLabel;
+  $('#btnImportAgg').style.display = (v === 'aggs' && ME?.role === 'admin') ? '' : 'none';
   render();
   if (v === 'rel' || v === 'reqs' || v === 'alm') refreshData(true);
 }
@@ -701,6 +702,73 @@ async function delAgg(id) { await guarded(async () => {
     showBanner('ok', `Agregado ${a.fogo} excluído.`, '');
   } catch (e) { showBanner('err', 'Falha ao excluir: ' + e.message, ''); }
 }); }
+/* =============== importacao de agregados via planilha (padrao CADASTAGR) =============== */
+let IMPORT_FILE_B64 = null;
+function openImportForm() {
+  $('#imp_file').value = '';
+  $('#imp_results').style.display = 'none';
+  $('#imp_results').innerHTML = '';
+  $('#imperr').style.display = 'none';
+  $('#btnImpConfirmar').style.display = 'none';
+  IMPORT_FILE_B64 = null;
+  $('#ov11').classList.add('open');
+}
+$('#btnImportAgg') && ($('#btnImportAgg').onclick = openImportForm);
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+    reader.onerror = () => reject(new Error('Falha ao ler o arquivo.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+$('#btnImpAnalisar').onclick = async () => {
+  const errEl = $('#imperr');
+  errEl.style.display = 'none';
+  const file = $('#imp_file').files[0];
+  if (!file) { errEl.textContent = 'Selecione um arquivo .xlsx.'; errEl.style.display = 'block'; return; }
+  setBtnLoading($('#btnImpAnalisar'), true);
+  try {
+    IMPORT_FILE_B64 = await fileToBase64(file);
+    const r = await api('/import/aggregates/preview', { method: 'POST', body: JSON.stringify({ fileB64: IMPORT_FILE_B64 }) });
+    const linhas = [
+      `<b>${r.totalLinhas}</b> linha(s) com nº de fogo na planilha`,
+      r.duplicadosNoArquivo ? `<b>${r.duplicadosNoArquivo}</b> duplicada(s) dentro do próprio arquivo (ignoradas)` : '',
+      r.jaCadastrados ? `<b>${r.jaCadastrados}</b> já cadastrada(s) no sistema (ignoradas)` : '',
+      `<b>${r.aCriar}</b> agregado(s) a criar — <b style="color:var(--blue)">${r.novo}</b> novo(s), <b style="color:var(--green)">${r.recondicionado}</b> recondicionado(s)`,
+      `Peças: <b>${r.pecasReaproveitadas}</b> existente(s) reaproveitada(s), <b>${r.pecasNovas.length}</b> nova(s) a criar (categoria "Geral")`,
+    ].filter(Boolean).map(l => `<div>${l}</div>`).join('');
+    const novasList = r.pecasNovas.length
+      ? `<div style="margin-top:8px"><b>Peças novas:</b></div>` + r.pecasNovas.map(p => `<div style="padding-left:8px">• ${esc(p.desc)} — cód. ${esc(p.codNovo)}/${esc(p.codRec)}${p.ref ? ' — ref. ' + esc(p.ref) : ''}</div>`).join('')
+      : '';
+    $('#imp_results').innerHTML = linhas + novasList;
+    $('#imp_results').style.display = '';
+    $('#btnImpConfirmar').style.display = r.aCriar ? '' : 'none';
+    if (!r.aCriar) { errEl.textContent = 'Nada novo pra importar — todas as linhas já estão cadastradas ou duplicadas.'; errEl.style.display = 'block'; }
+  } catch (e) {
+    errEl.textContent = e.message; errEl.style.display = 'block';
+    $('#imp_results').style.display = 'none';
+    $('#btnImpConfirmar').style.display = 'none';
+  } finally { setBtnLoading($('#btnImpAnalisar'), false); }
+};
+
+$('#btnImpConfirmar').onclick = async () => {
+  if (!IMPORT_FILE_B64) return;
+  const errEl = $('#imperr');
+  errEl.style.display = 'none';
+  setBtnLoading($('#btnImpConfirmar'), true);
+  try {
+    const r = await api('/import/aggregates/commit', { method: 'POST', body: JSON.stringify({ fileB64: IMPORT_FILE_B64 }) });
+    $('#ov11').classList.remove('open');
+    showBanner('ok', `Importação concluída: ${r.criados} agregado(s) criado(s)${r.pecasNovas ? ` (${r.pecasNovas} peça(s) nova(s))` : ''}.`, '');
+    await refreshData(true);
+  } catch (e) {
+    errEl.textContent = e.message; errEl.style.display = 'block';
+  } finally { setBtnLoading($('#btnImpConfirmar'), false); }
+};
+
 function openAggFicha(fogo) {
   const a = aggByFogo(fogo); if (!a) return;
   // Regra 5 — histórico completo: cadastro, requisições, entregas, substituições,

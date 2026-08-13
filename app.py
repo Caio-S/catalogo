@@ -2,6 +2,7 @@ import base64
 import io
 import os
 import re
+import unicodedata
 from datetime import date, datetime, timedelta
 from functools import wraps
 
@@ -529,10 +530,13 @@ def delete_aggregate(agg_id):
     return "", 204
 
 
-# =============== importacao de agregados via planilha (padrao CADASTAGR) ===============
-# Layout esperado (1a aba do arquivo): colunas ITEM, CÓD NOVO, CÓD REC, N FOGO,
-# descrição, REF, CADASTRO (NOVO/RECONDICIONADO), ... — cada linha vira um agregado
-# individual em estoque no almoxarifado (sem máquina/frota associada).
+# =============== importacao de agregados via planilha ===============
+# A planilha já apareceu em 2 formatos diferentes (e deve continuar variando):
+#   - "estoque no almoxarifado": ITEM, CÓD NOVO, CÓD REC, N FOGO, descrição, REF,
+#     CADASTRO (NOVO/RECONDICIONADO), ... — vira agregado DISPONÍVEL, sem máquina.
+#   - "já aplicado na frota": REFERENCIA, CÓD NOVO, CÓD REC, N FOGO, DESCRIÇÃO, FROTA
+#     — vira agregado APLICADO, vinculado à máquina daquele código de frota.
+# Por isso as colunas são localizadas pelo texto do cabeçalho (não pela posição fixa).
 
 
 def _int_str(v):
@@ -542,24 +546,81 @@ def _int_str(v):
         return None
 
 
+def _norm_header(s):
+    s = unicodedata.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode("ascii")
+    return s.strip().upper()
+
+
+def _find_header_row(ws):
+    """Varre as primeiras linhas até achar a que tem cabeçalho de verdade (algumas
+    planilhas têm uma linha de título antes do cabeçalho)."""
+    for row in ws.iter_rows(min_row=1, max_row=6):
+        vals = [_norm_header(c.value) for c in row]
+        if any("COD" in v and "NOVO" in v for v in vals) and any("FOGO" in v for v in vals):
+            return row
+    return None
+
+
+def _map_columns(header_row):
+    idx = {}
+    for i, cell in enumerate(header_row):
+        v = _norm_header(cell.value)
+        if "COD" in v and "NOVO" in v:
+            idx["cod_novo"] = i
+        elif "COD" in v and "REC" in v:
+            idx["cod_rec"] = i
+        elif "FOGO" in v:
+            idx["fogo"] = i
+        elif "DESCRI" in v or "SITUA" in v:
+            idx["desc"] = i
+        elif "FROTA" in v:
+            idx["frota"] = i
+        elif "CADASTRO" in v:
+            idx["cadastro"] = i
+        elif v.startswith("REF"):
+            idx["ref"] = i
+    return idx
+
+
+def _cell(row, idx, key):
+    i = idx.get(key)
+    return row[i] if i is not None and i < len(row) else None
+
+
 def parse_import_xlsx(file_bytes):
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
     ws = wb.worksheets[0]
+    header_row = _find_header_row(ws)
+    if header_row is None:
+        raise ValueError("Não encontrei um cabeçalho com CÓD NOVO e N FOGO na planilha.")
+    idx = _map_columns(header_row)
+    if "cod_novo" not in idx or "cod_rec" not in idx or "fogo" not in idx:
+        raise ValueError("Não encontrei as colunas de CÓD NOVO, CÓD REC e N FOGO na planilha.")
+
     rows = []
-    for row in ws.iter_rows(min_row=1, values_only=True):
-        if len(row) < 7:
+    for row in ws.iter_rows(min_row=header_row[0].row + 1, values_only=True):
+        cod_novo = _int_str(_cell(row, idx, "cod_novo"))
+        # cód rec é opcional (mesma regra do cadastro manual de peça): algumas linhas
+        # trazem texto tipo "Aguard." quando a peça ainda não tem código recondicionado
+        # definido — trata como sem código em vez de descartar a linha inteira.
+        cod_rec = _int_str(_cell(row, idx, "cod_rec"))
+        fogo_raw = _cell(row, idx, "fogo")
+        fogo = str(fogo_raw).strip().upper() if fogo_raw else ""
+        # linhas de título/rodapé/em branco não têm código novo nem fogo válido — filtra sozinho
+        if not cod_novo or not fogo:
             continue
-        cod_novo = _int_str(row[1])
-        cod_rec = _int_str(row[2])
-        fogo = str(row[3]).strip().upper() if row[3] else ""
-        # linhas de título/cabeçalho não têm código numérico nem fogo válido — filtra sozinho
-        if not cod_novo or not cod_rec or not fogo:
-            continue
-        desc = str(row[4] or "").strip().upper()
-        ref = str(row[5]).strip() if row[5] is not None else ""
-        cadastro = str(row[6] or "").strip().upper()
-        situacao = SIT_DISPONIVEL_NOVO if cadastro == "NOVO" else SIT_DISPONIVEL_RECOND
-        rows.append({"fogo": fogo, "cod_novo": cod_novo, "cod_rec": cod_rec, "desc": desc, "ref": ref, "situacao": situacao})
+        desc = str(_cell(row, idx, "desc") or "").strip().upper()
+        ref = str(_cell(row, idx, "ref") or "").strip()
+        frota_cod_val = _int_str(_cell(row, idx, "frota"))
+        cadastro = _norm_header(_cell(row, idx, "cadastro"))
+        if frota_cod_val:
+            situacao = SIT_APLICADO
+        else:
+            situacao = SIT_DISPONIVEL_NOVO if cadastro == "NOVO" else SIT_DISPONIVEL_RECOND
+        rows.append({
+            "fogo": fogo, "cod_novo": cod_novo, "cod_rec": cod_rec, "desc": desc, "ref": ref,
+            "situacao": situacao, "frota_cod": frota_cod_val,
+        })
     return rows
 
 
@@ -585,6 +646,8 @@ def import_aggregates_preview():
         return jsonify({"error": "Arquivo não enviado."}), 400
     try:
         rows = parse_import_xlsx(base64.b64decode(file_b64))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     except Exception:
         return jsonify({"error": "Não consegui ler o arquivo. Confira se é um .xlsx válido."}), 400
     if not rows:
@@ -604,6 +667,8 @@ def import_aggregates_preview():
         else:
             new_items.append({"codNovo": r["cod_novo"], "codRec": r["cod_rec"], "ref": r["ref"], "desc": r["desc"]})
 
+    frotas = sorted({r["frota_cod"] for r in to_create if r["frota_cod"]}, key=int)
+
     return jsonify({
         "totalLinhas": len(rows),
         "duplicadosNoArquivo": len(rows) - len(keep),
@@ -613,6 +678,8 @@ def import_aggregates_preview():
         "pecasReaproveitadas": reused,
         "novo": sum(1 for r in to_create if r["situacao"] == SIT_DISPONIVEL_NOVO),
         "recondicionado": sum(1 for r in to_create if r["situacao"] == SIT_DISPONIVEL_RECOND),
+        "aplicado": sum(1 for r in to_create if r["situacao"] == SIT_APLICADO),
+        "frotas": frotas,
     })
 
 
@@ -625,12 +692,29 @@ def import_aggregates_commit():
         return jsonify({"error": "Arquivo não enviado."}), 400
     try:
         rows = parse_import_xlsx(base64.b64decode(file_b64))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     except Exception:
         return jsonify({"error": "Não consegui ler o arquivo. Confira se é um .xlsx válido."}), 400
 
     _, to_create = _dedup_and_split(rows)
     if not to_create:
         return jsonify({"criados": 0, "pecasNovas": 0})
+
+    # linhas com frota vêm com situação APLICADO — busca a descrição de cada frota no
+    # MariaDB (1 query só, pros códigos distintos do lote) pra montar "código - descrição",
+    # igual ao resto do sistema; se a consulta falhar, cai pro código puro sem travar a importação.
+    frota_desc = {}
+    frota_codes = {r["frota_cod"] for r in to_create if r["frota_cod"]}
+    if frota_codes and os.environ.get("MARIADB_HOST"):
+        try:
+            frota_desc = sync_mariadb.fetch_frotas_por_codigos(frota_codes)
+        except Exception as exc:
+            print(f"[import_aggregates] lookup de frota falhou: {exc}")
+
+    def maquina_de(frota_cod_val):
+        desc = frota_desc.get(frota_cod_val)
+        return f"{frota_cod_val} - {desc}" if desc else frota_cod_val
 
     # new_id() usa timestamp em milissegundos — ótimo pra 1 registro por request, mas
     # num loop de dezenas/centenas de linhas várias chamadas caem no mesmo milissegundo
@@ -663,6 +747,7 @@ def import_aggregates_commit():
             fogo=r["fogo"],
             item_id=item.id,
             situacao=r["situacao"],
+            maquina=maquina_de(r["frota_cod"]) if r["frota_cod"] else "",
             obs="Importado via planilha (padrão CADASTAGR)",
         ))
 

@@ -737,11 +737,12 @@ $('#btnImpAnalisar').onclick = async () => {
       `<b>${r.totalLinhas}</b> linha(s) com nº de fogo na planilha`,
       r.duplicadosNoArquivo ? `<b>${r.duplicadosNoArquivo}</b> duplicada(s) dentro do próprio arquivo (ignoradas)` : '',
       r.jaCadastrados ? `<b>${r.jaCadastrados}</b> já cadastrada(s) no sistema (ignoradas)` : '',
-      `<b>${r.aCriar}</b> agregado(s) a criar — <b style="color:var(--blue)">${r.novo}</b> novo(s), <b style="color:var(--green)">${r.recondicionado}</b> recondicionado(s)`,
+      `<b>${r.aCriar}</b> agregado(s) a criar — <b style="color:var(--blue)">${r.novo}</b> novo(s), <b style="color:var(--green)">${r.recondicionado}</b> recondicionado(s)${r.aplicado ? `, <b style="color:#F07E3C">${r.aplicado}</b> já aplicado(s) em frota` : ''}`,
+      r.frotas && r.frotas.length ? `Frotas envolvidas: <b>${r.frotas.map(esc).join(', ')}</b>` : '',
       `Peças: <b>${r.pecasReaproveitadas}</b> existente(s) reaproveitada(s), <b>${r.pecasNovas.length}</b> nova(s) a criar (categoria "Geral")`,
     ].filter(Boolean).map(l => `<div>${l}</div>`).join('');
     const novasList = r.pecasNovas.length
-      ? `<div style="margin-top:8px"><b>Peças novas:</b></div>` + r.pecasNovas.map(p => `<div style="padding-left:8px">• ${esc(p.desc)} — cód. ${esc(p.codNovo)}/${esc(p.codRec)}${p.ref ? ' — ref. ' + esc(p.ref) : ''}</div>`).join('')
+      ? `<div style="margin-top:8px"><b>Peças novas:</b></div>` + r.pecasNovas.map(p => `<div style="padding-left:8px">• ${esc(p.desc)} — cód. ${esc(p.codNovo)}${p.codRec ? '/' + esc(p.codRec) : ''}${p.ref ? ' — ref. ' + esc(p.ref) : ''}</div>`).join('')
       : '';
     $('#imp_results').innerHTML = linhas + novasList;
     $('#imp_results').style.display = '';

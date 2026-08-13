@@ -71,6 +71,30 @@ def fetch_frota(cod_frota):
         conn.close()
 
 
+def fetch_frotas_por_codigos(codigos):
+    """Busca descricao de varios CodFrota de uma vez (1 conexao/query), pra nao abrir
+    uma conexao por linha numa importacao em lote. Retorna {codFrota_str: descricao}."""
+    codigos = sorted({str(c) for c in codigos if c})
+    if not codigos:
+        return {}
+
+    conn = _conn()
+    try:
+        with conn.cursor() as cur:
+            placeholders = ",".join(["%s"] * len(codigos))
+            cur.execute(
+                f"""
+                SELECT CodFrota, descricao_frota
+                FROM vw_bi_fluxo_dFrota
+                WHERE CodFrota IN ({placeholders})
+                """,
+                codigos,
+            )
+            return {str(row["CodFrota"]): row["descricao_frota"].strip() for row in cur.fetchall()}
+    finally:
+        conn.close()
+
+
 def fetch_saldos():
     conn = _conn()
     try:

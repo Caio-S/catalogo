@@ -1,9 +1,19 @@
+import unicodedata
 from datetime import datetime
 
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import check_password_hash, generate_password_hash
 
 db = SQLAlchemy()
+
+# categorias que recebem saldo recomendado padrão de 3 quando a peça não tem um valor
+# próprio definido (fica sempre editável por peça — ver Item.saldo_recomendado_efetivo)
+SALDO_RECOMENDADO_CATS_PADRAO = {"MOTORES HIDRAULICOS", "CILINDROS HIDRAULICOS", "BOMBAS HIDRAULICAS"}
+
+
+def _norm_cat(s):
+    s = unicodedata.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode("ascii")
+    return s.strip().upper()
 
 ROLE_ADMIN = "admin"
 ROLE_GESTOR = "gestor"
@@ -64,9 +74,18 @@ class Item(db.Model):
     em = db.Column(db.Integer, default=0)
     dv = db.Column(db.Integer, default=0)
     novo = db.Column(db.Boolean, default=False)
+    saldo_recomendado = db.Column(db.Integer)
     foto_b64 = db.Column(db.Text)
     foto_mime = db.Column(db.String(40))
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @property
+    def saldo_recomendado_efetivo(self):
+        """Valor próprio da peça, ou o padrão da categoria (3 pra motores/cilindros/bombas
+        hidráulicas) quando ninguém definiu um valor específico ainda."""
+        if self.saldo_recomendado is not None:
+            return self.saldo_recomendado
+        return 3 if _norm_cat(self.cat) in SALDO_RECOMENDADO_CATS_PADRAO else None
 
     def to_dict(self, include_photo=True):
         d = {
@@ -84,6 +103,7 @@ class Item(db.Model):
             "em": self.em,
             "dv": self.dv,
             "novo": self.novo,
+            "saldoRecomendado": self.saldo_recomendado_efetivo,
             "updatedAt": self.updated_at.strftime("%d/%m/%Y %H:%M") if self.updated_at else None,
         }
         if include_photo:

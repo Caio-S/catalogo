@@ -79,6 +79,7 @@ def ensure_schema():
 
     insp = inspect(db.engine)
     wanted = {
+        "items": [("saldo_recomendado", "INTEGER")],
         "movs": [("solicitacao_orc", "VARCHAR(60)")],
         "reqs": [
             ("origem_sit", "VARCHAR(20)"),
@@ -118,6 +119,14 @@ def item_from_payload(payload, item=None):
     # definidos pela sincronização com o MariaDB (apply_saldo_live/sync_mariadb.sync).
     for k in ("pc", "em", "dv"):
         setattr(item, k, int(payload.get(k) or 0))
+    sr_val = payload.get("saldoRecomendado")
+    if sr_val in (None, ""):
+        item.saldo_recomendado = None
+    else:
+        try:
+            item.saldo_recomendado = max(0, int(sr_val))
+        except (TypeError, ValueError):
+            item.saldo_recomendado = None
     foto = payload.get("foto")
     if foto:
         item.foto_b64 = foto.get("b64")

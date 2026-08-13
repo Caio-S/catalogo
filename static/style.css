@@ -72,6 +72,13 @@ main{max-width:1240px;margin:22px auto 60px;padding:0 28px}
   transition:transform .15s cubic-bezier(.22,1,.36,1),border-color .15s,box-shadow .25s;position:relative;
   will-change:transform;transform-style:preserve-3d}
 .tag:hover{border-color:var(--green-d);box-shadow:0 14px 30px rgba(0,0,0,.5)}
+.tag.alerta{border-color:var(--red);animation:alertGlow 2.4s ease-in-out infinite}
+.tag.alerta:hover{border-color:var(--red);box-shadow:0 14px 30px rgba(0,0,0,.5),0 0 22px rgba(224,82,82,.55)}
+@keyframes alertGlow{
+  0%,100%{box-shadow:0 0 0 1px rgba(224,82,82,.3),0 0 14px rgba(224,82,82,.22)}
+  50%{box-shadow:0 0 0 1px rgba(224,82,82,.65),0 0 24px rgba(224,82,82,.5)}
+}
+@media (prefers-reduced-motion: reduce){ .tag.alerta{animation:none;box-shadow:0 0 0 1px rgba(224,82,82,.5),0 0 18px rgba(224,82,82,.35)} }
 
 @keyframes cardDrop{
   0%{opacity:0;transform:translateY(-70px) scale(.82)}

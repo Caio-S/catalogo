@@ -33,6 +33,11 @@ const emTotal = d => (d.em || 0) + aggsOf(d.id).filter(a => a.situacao === 'MANU
 // campo "máquina" convive em 3 formatos ("código - descrição", só código, só descrição
 // antiga) — compara só o código quando dá pra extrair, senão cai pra string inteira
 const frotaCod = s => (String(s || '').trim().match(/^\d+/) || [String(s || '').trim().toUpperCase()])[0];
+// categorias que sugerem saldo recomendado 3 por padrão (espelha SALDO_RECOMENDADO_CATS_PADRAO em models.py)
+const RECOMENDADO_CATS_PADRAO = new Set(['MOTORES HIDRAULICOS', 'CILINDROS HIDRAULICOS', 'BOMBAS HIDRAULICAS']);
+const normCat = s => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase();
+const saldoRecomendadoPadrao = cat => RECOMENDADO_CATS_PADRAO.has(normCat(cat)) ? 3 : null;
+const emAlerta = d => d.saldoRecomendado != null && (d.sn || 0) + (d.sr || 0) < d.saldoRecomendado;
 
 document.addEventListener('animationend', e => {
   if (e.animationName === 'cardDrop') e.target.classList.remove('tag-enter');
@@ -311,6 +316,7 @@ function match(d) {
     if (state.f.has('sr') && !(d.sr > 0)) return false;
     if (state.f.has('em') && !abertos(d.id).length) return false;
     if (state.f.has('dv') && !(d.dv > 0)) return false;
+    if (state.f.has('alerta') && !emAlerta(d)) return false;
   }
   if (state.q) {
     const hay = `${d.desc} ${d.codNovo} ${d.codRec} ${d.ref} ${d.fogo}`.toLowerCase();
@@ -328,7 +334,8 @@ function card(d, idx) {
   const enterStyle = firstPaint ? ` style="animation-delay:${Math.min(idx * 16, 480)}ms"` : '';
   const abrt = abertos(d.id);
   const fornBlock = abrt.length ? `<div class="forn">🔧 FORNECEDOR · ${abrt.reduce((s, m) => s + m.qtd, 0)} un · desde ${br(abrt[0].dataEnvio)}${abrt.some(atrasado) ? ' <b style="color:var(--red)">· ATRASADO</b>' : ''}</div>` : '';
-  return `<div class="tag${enterClass}" data-id="${d.id}" role="button" tabindex="0" aria-label="${esc(d.desc)}"${enterStyle}>
+  const alertClass = emAlerta(d) ? ' alerta' : '';
+  return `<div class="tag${enterClass}${alertClass}" data-id="${d.id}" role="button" tabindex="0" aria-label="${esc(d.desc)}"${enterStyle}>
     <span class="punch"></span>${d.novo ? '<span class="new">NOVA</span>' : ''}
     <div class="thead">${ph}
       <div class="tinfo">${d.fogo ? `<span class="fogo">${esc(d.fogo)}</span>` : ''}
@@ -451,12 +458,14 @@ function openFicha(id) {
     <div class="fbody">
       ${src ? `<div class="fimg"><img src="${src}" alt="${esc(d.desc)}"></div>` : ''}
       ${divergencia ? `<div class="banner err" style="display:block;margin:0 0 12px;padding:0"><div class="inner">⚠ ${esc(divergencia)}</div></div>` : ''}
+      ${emAlerta(d) ? `<div class="banner err" style="display:block;margin:0 0 12px;padding:0"><div class="inner">⚠ Saldo abaixo do recomendado (${d.sn + d.sr} de ${d.saldoRecomendado})</div></div>` : ''}
       <div class="ftitle">${esc(d.desc)}</div>
       <div class="fmeta">
         <div><div class="k">Cód. CHB Novo</div><div class="v">${esc(d.codNovo ?? '–')}</div></div>
         <div><div class="k">Cód. CHB Recond.</div><div class="v">${esc(d.codRec ?? '–')}</div></div>
         <div><div class="k">Referência</div><div class="v">${esc(d.ref || '–')}</div></div>
         <div><div class="k">Categoria</div><div class="v">${esc(d.cat)}</div></div>
+        ${d.saldoRecomendado != null ? `<div><div class="k">Saldo recomendado</div><div class="v">${esc(d.saldoRecomendado)}</div></div>` : ''}
       </div>
       <div class="fsaldos">
         <div class="fs"><div class="v" style="color:var(--blue)">${fmt(d.sn)}</div><div class="l">Saldo novo</div></div>
@@ -504,6 +513,8 @@ function fillCatOptions(sel) {
   $('#f_cat').innerHTML = (cats.length ? cats : ['Geral']).map(c => `<option${c === sel ? ' selected' : ''}>${esc(c)}</option>`).join('') +
     `<option value="__nova__">+ Nova categoria…</option>`;
 }
+let saldoRecTouched = false;
+$('#f_saldorec').addEventListener('input', () => { saldoRecTouched = true; });
 $('#f_cat').addEventListener('change', async e => {
   if (e.target.value === '__nova__') {
     const n = await uiPrompt('Nome da nova categoria:', '', { title: 'Nova categoria', okLabel: 'Criar' });
@@ -511,6 +522,9 @@ $('#f_cat').addEventListener('change', async e => {
       e.target.insertAdjacentHTML('afterbegin', `<option selected>${esc(v)}</option>`); }
     else fillCatOptions(catList()[0]);
   }
+  // sugere o saldo recomendado padrão da categoria (motores/cilindros/bombas hidráulicas)
+  // só enquanto o usuário não tiver digitado um valor próprio nesse campo
+  if (!saldoRecTouched) $('#f_saldorec').value = saldoRecomendadoPadrao($('#f_cat').value) ?? '';
 });
 $('#btnAdd').onclick = () => {
   if (state.view === 'pecas') openForm(null);
@@ -530,6 +544,8 @@ function openForm(id) {
   $('#f_cr').value = d ? (d.codRec ?? '') : '';
   $('#f_ref').value = d ? (d.ref || '') : '';
   for (const k of ['sn', 'pc', 'sr', 'em', 'dv']) $('#f_' + k).value = d ? (d[k] || 0) : 0;
+  saldoRecTouched = false;
+  $('#f_saldorec').value = d ? (d.saldoRecomendado ?? '') : (saldoRecomendadoPadrao(catList()[0]) ?? '');
   // formImg só é setado se o usuário enviar uma foto NOVA agora; deixando em branco
   // ao editar, o backend preserva a foto atual (não precisa reenviar o base64 aqui)
   formImg = null; formMime = null;
@@ -578,6 +594,7 @@ $('#btnSave').onclick = async () => {
     // sn/sr (via banco) não são enviados: exclusivos da sincronização com o MariaDB
     pc: +$('#f_pc').value || 0,
     em: +$('#f_em').value || 0, dv: +$('#f_dv').value || 0,
+    saldoRecomendado: $('#f_saldorec').value === '' ? null : +$('#f_saldorec').value,
   };
   if (formImg) rec.foto = { b64: formImg, mime: formMime };
   setBtnLoading($('#btnSave'), true);

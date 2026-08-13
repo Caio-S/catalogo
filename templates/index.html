@@ -63,6 +63,7 @@
     <span class="chip c-dv" data-f="dv">Devendo</span>
     <span class="chip c-em" data-f="em">🔧 No fornecedor</span>
     <span class="chip c-ok" data-f="sr">Com saldo recond.</span>
+    <span class="chip c-dv" data-f="alerta">⚠️ Em alerta</span>
     <button class="btn primary" id="btnAdd">＋ Adicionar peça</button>
     <button class="btn" id="btnImportAgg" style="display:none">📥 Importar planilha</button>
     <button class="btn" id="btnExport">⬇ Exportar Excel</button>
@@ -87,6 +88,7 @@
     <div class="fld"><label>Cód. CHB novo *</label><input id="f_cn" inputmode="numeric"></div>
     <div class="fld"><label>Cód. CHB recond.</label><input id="f_cr"></div>
     <div class="fld full"><label>Referência</label><input id="f_ref" maxlength="30"></div>
+    <div class="fld"><label title="Alerta visual quando Saldo Novo + Recond. ficar abaixo desse valor">Saldo recomendado</label><input id="f_saldorec" type="number" min="0" placeholder="ex.: 3"></div>
   </div>
   <div class="nums">
     <div class="fld"><label>Novo (via banco)</label><input id="f_sn" type="number" min="0" value="0" disabled></div>

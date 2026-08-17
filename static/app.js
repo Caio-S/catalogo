@@ -1636,12 +1636,16 @@ $('#btnExport').onclick = () => {
   const aoa = [['GESTÃO DE PEÇAS CH570 — EXPORTADO DO APLICATIVO EM ' + new Date().toLocaleString('pt-BR')], [], header];
   for (const c of [...new Set(filtered.map(d => d.cat))]) {
     aoa.push([c]);
+    // pcTotal/emTotal (não d.pc/d.em direto) pra bater com o que o card e os KPIs
+    // mostram na tela, que somam também os agregados com fogo individual rastreado
     for (const d of filtered.filter(x => x.cat === c))
-      aoa.push([d.n ?? '', d.codNovo ?? '', d.codRec ?? '', d.fogo || '', d.desc, d.ref || '', 0, d.sn, d.pc, d.sr, d.em, d.dv]);
+      aoa.push([d.n ?? '', d.codNovo ?? '', d.codRec ?? '', d.fogo || '', d.desc, d.ref || '', 0, d.sn, pcTotal(d), d.sr, emTotal(d), d.dv]);
   }
   aoa.push([]);
   const t = k => filtered.reduce((s, d) => s + (+d[k] || 0), 0);
-  aoa.push(['TOTAL GERAL', '', '', '', '', '', '', t('sn'), t('pc'), t('sr'), t('em'), t('dv')]);
+  const tPc = filtered.reduce((s, d) => s + pcTotal(d), 0);
+  const tEm = filtered.reduce((s, d) => s + emTotal(d), 0);
+  aoa.push(['TOTAL GERAL', '', '', '', '', '', '', t('sn'), tPc, t('sr'), tEm, t('dv')]);
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = [{ wch: 6 }, { wch: 12 }, { wch: 14 }, { wch: 10 }, { wch: 44 }, { wch: 14 }, { wch: 8 }, { wch: 10 }, { wch: 11 }, { wch: 10 }, { wch: 9 }, { wch: 9 }];
   const wb = XLSX.utils.book_new();

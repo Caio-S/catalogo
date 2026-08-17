@@ -1629,16 +1629,18 @@ function renderUsers() {
 
 /* =============== exportar Excel =============== */
 $('#btnExport').onclick = () => {
+  // exporta só o que está filtrado no momento (busca, categoria e chips), não o catálogo inteiro
+  const filtered = DATA.filter(match);
   const header = ['ITEM', 'CÓD CHB NOVO', 'CÓD CHB RECOND', 'BASE Nº DE FOGO', 'DESCRIÇÃO GENÉRICA',
     'REFERÊNCIA', 'VERSÃO (ANO)', 'SALDO NOVO', 'P/ CONSERTO', 'SALDO REC', 'EM MANUT', 'DEVENDO'];
   const aoa = [['GESTÃO DE PEÇAS CH570 — EXPORTADO DO APLICATIVO EM ' + new Date().toLocaleString('pt-BR')], [], header];
-  for (const c of catList()) {
+  for (const c of [...new Set(filtered.map(d => d.cat))]) {
     aoa.push([c]);
-    for (const d of DATA.filter(x => x.cat === c))
+    for (const d of filtered.filter(x => x.cat === c))
       aoa.push([d.n ?? '', d.codNovo ?? '', d.codRec ?? '', d.fogo || '', d.desc, d.ref || '', 0, d.sn, d.pc, d.sr, d.em, d.dv]);
   }
   aoa.push([]);
-  const t = k => DATA.reduce((s, d) => s + (+d[k] || 0), 0);
+  const t = k => filtered.reduce((s, d) => s + (+d[k] || 0), 0);
   aoa.push(['TOTAL GERAL', '', '', '', '', '', '', t('sn'), t('pc'), t('sr'), t('em'), t('dv')]);
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = [{ wch: 6 }, { wch: 12 }, { wch: 14 }, { wch: 10 }, { wch: 44 }, { wch: 14 }, { wch: 8 }, { wch: 10 }, { wch: 11 }, { wch: 10 }, { wch: 9 }, { wch: 9 }];
